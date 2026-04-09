@@ -17,6 +17,8 @@ let sortDirection = 'asc'; // 'asc' или 'desc'
 // История команд
 let commandHistory = [];
 const MAX_HISTORY = 100;
+// Карта ожидающих результатов команд (по ID сообщения)
+const pendingCommands = new Map();
 
 // Настройки удаления (храним в localStorage)
 let skipDeleteConfirm = localStorage.getItem('skipDeleteConfirm') === 'true';
@@ -177,6 +179,17 @@ function handleMessage(data) {
     } else if (data.type === 'token_rotated') {
         addLogEntry('system', 'Token rotated successfully');
         ws.send(JSON.stringify({ type: 'get_token_info' }));
+    } else if (data.type === 'command_result') {
+        // Обработка результата выполнения команды
+        const { id, device_id, payload } = data;
+        const pending = pendingCommands.get(id);
+        if (pending) {
+            const success = payload.success;
+            const error = payload.error;
+            // Обновляем запись в истории
+            updateHistoryEntry(pending.historyId, device_id, pending.command, pending.params, success, error);
+            pendingCommands.delete(id);
+        }
     }
 }
 
@@ -277,6 +290,7 @@ function renderTable() {
             actionsHtml = `<button class="send-cmd" data-id="${id}">Send Command</button>
                            <button class="json-cmd" data-id="${id}">JSON</button>
                            <button class="disconnect-device" data-id="${id}">Disconnect</button>
+                           <button class="reconnect-device" data-id="${id}">Reconnect</button>
                            <button class="remove-device" data-id="${id}">Remove</button>`;
         } else {
             actionsHtml = `<button class="remove-device" data-id="${id}">Remove</button>`;
@@ -312,6 +326,9 @@ function renderTable() {
     });
     document.querySelectorAll('.disconnect-device').forEach(btn => {
         btn.addEventListener('click', () => disconnectDevice(btn.dataset.id));
+    });
+    document.querySelectorAll('.reconnect-device').forEach(btn => {
+        btn.addEventListener('click', () => reconnectDevice(btn.dataset.id));
     });
     document.querySelectorAll('.remove-device').forEach(btn => {
         btn.addEventListener('click', () => promptDeleteDevice(btn.dataset.id));
@@ -366,8 +383,11 @@ function toggleQuickCommandsRow(deviceId) {
             btn.addEventListener('click', (e) => {
                 if (btn.classList.contains('loading')) return;
                 btn.classList.add('loading');
-                sendCommand(deviceId, cmd, {}, () => {
+                sendCommand(deviceId, cmd, {}, (success, error) => {
                     btn.classList.remove('loading');
+                    if (!success) {
+                        addLogEntry('error', `Command ${cmd} failed: ${error || 'Unknown error'}`);
+                    }
                 });
             });
             container.appendChild(btn);
@@ -386,33 +406,67 @@ function removeQuickCommandsRow() {
     }
 }
 
-// === Отправка команд с индикацией ===
+// === Отправка команд с индикацией и отслеживанием результата ===
 function sendCommand(deviceId, command, payload, callback) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
         alert('Not connected');
-        if (callback) callback();
+        if (callback) callback(false, 'Not connected');
         return;
     }
-    const msg = { type: 'command', device_id: deviceId, command, payload };
+    const msgId = generateUUID();
+    const msg = { type: 'command', device_id: deviceId, command, payload, id: msgId };
     ws.send(JSON.stringify(msg));
     addLogEntry('command', `→ ${deviceId}: ${command} ${JSON.stringify(payload)}`);
-    addToHistory(deviceId, command, payload);
-    // Симуляция завершения (в реальности нужно ждать ответ, но пока просто таймаут)
-    if (callback) {
-        setTimeout(callback, 500);
-    }
+    const historyId = addToHistory(deviceId, command, payload, 'pending');
+    // Сохраняем ожидание результата
+    pendingCommands.set(msgId, {
+        historyId,
+        deviceId,
+        command,
+        params: payload,
+        callback
+    });
+    // Таймаут для очистки ожидания (если ответ не придёт)
+    setTimeout(() => {
+        if (pendingCommands.has(msgId)) {
+            const pending = pendingCommands.get(msgId);
+            updateHistoryEntry(pending.historyId, deviceId, command, payload, false, 'Timeout');
+            pendingCommands.delete(msgId);
+            if (pending.callback) pending.callback(false, 'Timeout');
+        }
+    }, 10000);
 }
 
-function addToHistory(deviceId, command, payload) {
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+function addToHistory(deviceId, command, payload, status = 'pending') {
     const entry = {
+        id: Date.now() + '-' + Math.random().toString(36).substr(2, 5),
         timestamp: new Date(),
         deviceId,
         command,
-        payload: JSON.stringify(payload)
+        payload: JSON.stringify(payload),
+        status: status, // 'pending', 'success', 'error'
+        error: null
     };
     commandHistory.unshift(entry);
     if (commandHistory.length > MAX_HISTORY) commandHistory.pop();
     renderHistory();
+    return entry.id;
+}
+
+function updateHistoryEntry(historyId, deviceId, command, payload, success, error) {
+    const entry = commandHistory.find(e => e.id === historyId);
+    if (entry) {
+        entry.status = success ? 'success' : 'error';
+        entry.error = error || null;
+        renderHistory();
+    }
 }
 
 function renderHistory() {
@@ -423,8 +477,17 @@ function renderHistory() {
     }
     historyList.innerHTML = commandHistory.map(entry => {
         const timeStr = entry.timestamp.toLocaleTimeString();
+        let statusIndicator = '';
+        if (entry.status === 'pending') {
+            statusIndicator = '<span class="history-status pending">⏳</span>';
+        } else if (entry.status === 'success') {
+            statusIndicator = '<span class="history-status success">✓</span>';
+        } else if (entry.status === 'error') {
+            statusIndicator = `<span class="history-status error" title="${entry.error || 'Error'}">✗</span>`;
+        }
         return `<li>
             <span class="history-time">[${timeStr}]</span>
+            ${statusIndicator}
             <span class="history-device">${entry.deviceId}</span>
             <span class="history-command">${entry.command}</span>
             <span class="history-payload">${entry.payload}</span>
@@ -450,6 +513,12 @@ function disconnectDevice(deviceId) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'disconnect_device', device_id: deviceId }));
     addLogEntry('action', `Disconnect device ${deviceId}`);
+}
+
+function reconnectDevice(deviceId) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'reconnect_device', device_id: deviceId }));
+    addLogEntry('action', `Reconnect device ${deviceId} requested`);
 }
 
 function promptDeleteDevice(deviceId) {
@@ -559,8 +628,11 @@ function initUI() {
         if (!command) { alert('Command required'); return; }
         const btn = document.getElementById('send-json-command');
         btn.classList.add('loading');
-        sendCommand(deviceId, command, payload, () => {
+        sendCommand(deviceId, command, payload, (success, error) => {
             btn.classList.remove('loading');
+            if (!success) {
+                addLogEntry('error', `Command ${command} failed: ${error || 'Unknown error'}`);
+            }
         });
         commandModal.style.display = 'none';
     };
