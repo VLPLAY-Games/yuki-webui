@@ -1,197 +1,220 @@
 let ws = null;
 let reconnectTimer = null;
 const RECONNECT_DELAY = 3000;
+let devices = {};
+let selectedDeviceId = null;
+let pendingConfirmation = null;
 
 const statusIndicator = document.getElementById('connection-status');
 const statusText = document.getElementById('status-text');
 const devicesTbody = document.querySelector('#devices-table tbody');
+const groupTabs = document.getElementById('group-tabs');
+const quickPanel = document.getElementById('quick-commands-panel');
+const quickButtons = document.getElementById('quick-commands-buttons');
 const logList = document.getElementById('log-list');
-const clearLogsBtn = document.getElementById('clear-logs');
 
-const modal = document.getElementById('command-modal');
+// Modals
+const commandModal = document.getElementById('command-modal');
+const confirmModal = document.getElementById('confirm-modal');
 const modalDeviceId = document.getElementById('modal-device-id');
 const modalCommand = document.getElementById('modal-command');
 const modalPayload = document.getElementById('modal-payload');
-const sendJsonBtn = document.getElementById('send-json-command');
-const closeModalBtn = document.querySelector('.close');
+const confirmText = document.getElementById('confirm-text');
 
-let devices = {};
+let currentGroup = 'all';
 
 function connectWebSocket() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-
     ws = new WebSocket('ws://localhost:8000/webui');
-
     ws.onopen = () => {
-        console.log('WebSocket connected');
         updateConnectionStatus(true);
-        addLogEntry('system', 'Connected to Yuki Core');
-        if (reconnectTimer) {
-            clearTimeout(reconnectTimer);
-            reconnectTimer = null;
-        }
+        addLogEntry('system', 'Connected to Core');
+        if (reconnectTimer) clearTimeout(reconnectTimer);
     };
-
     ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
             handleMessage(data);
         } catch (e) {
-            console.error('Invalid JSON from Core:', e);
-            addLogEntry('error', 'Received malformed message from Core');
+            addLogEntry('error', 'Malformed message from Core');
         }
     };
-
     ws.onclose = () => {
-        console.log('WebSocket disconnected');
         updateConnectionStatus(false);
-        addLogEntry('system', 'Disconnected from Core');
+        addLogEntry('system', 'Disconnected');
         scheduleReconnect();
     };
-
-    ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        addLogEntry('error', 'WebSocket error');
-    };
+    ws.onerror = () => addLogEntry('error', 'WebSocket error');
 }
 
 function scheduleReconnect() {
     if (reconnectTimer) return;
     reconnectTimer = setTimeout(() => {
-        addLogEntry('system', 'Attempting to reconnect...');
+        addLogEntry('system', 'Reconnecting...');
         connectWebSocket();
     }, RECONNECT_DELAY);
 }
 
 function updateConnectionStatus(connected) {
-    if (connected) {
-        statusIndicator.classList.add('connected');
-        statusIndicator.classList.remove('disconnected');
-        statusText.textContent = 'Connected';
-    } else {
-        statusIndicator.classList.remove('connected');
-        statusIndicator.classList.add('disconnected');
-        statusText.textContent = 'Disconnected';
-    }
+    statusIndicator.classList.toggle('connected', connected);
+    statusIndicator.classList.toggle('disconnected', !connected);
+    statusText.textContent = connected ? 'Connected' : 'Disconnected';
 }
 
 function handleMessage(data) {
     if (data.type === 'devices_list' || data.type === 'devices_update') {
         if (data.payload && data.payload.devices) {
-            updateDeviceTable(data.payload.devices);
+            devices = data.payload.devices;
+            renderGroups();
+            renderTable();
         }
+    } else if (data.type === 'confirm_command') {
+        // Запрос подтверждения опасной команды
+        const { device_id, command, params } = data.payload;
+        pendingConfirmation = { id: data.id, device_id, command, params };
+        confirmText.textContent = `Execute "${command}" on ${device_id}?`;
+        confirmModal.style.display = 'block';
     }
 }
 
-function updateDeviceTable(newDevices) {
-    devices = newDevices;
-    devicesTbody.innerHTML = '';
+function renderGroups() {
+    const types = new Set();
+    Object.values(devices).forEach(d => types.add(d.type));
+    const groups = ['all', ...types];
+    groupTabs.innerHTML = groups.map(g =>
+        `<button class="tab ${currentGroup === g ? 'active' : ''}" data-group="${g}">${g}</button>`
+    ).join('');
+    document.querySelectorAll('.tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+            currentGroup = btn.dataset.group;
+            renderGroups();
+            renderTable();
+        });
+    });
+}
 
-    if (Object.keys(devices).length === 0) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td colspan="5" style="text-align: center; color: #888;">No devices connected</td>`;
-        devicesTbody.appendChild(tr);
+function renderTable() {
+    const filtered = Object.entries(devices).filter(([id, d]) =>
+        currentGroup === 'all' || d.type === currentGroup
+    );
+    if (filtered.length === 0) {
+        devicesTbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">No devices</td></tr>`;
+        quickPanel.style.display = 'none';
         return;
     }
-
-    for (let id in devices) {
-        const dev = devices[id];
-        const tr = document.createElement('tr');
-
-        const statusClass = `status-${dev.status}`;
-        const statusBadge = `<span class="status-badge ${statusClass}">${dev.status}</span>`;
-        const lastSeen = dev.last_seen ? new Date(dev.last_seen * 1000).toLocaleTimeString() : '—';
-
-        tr.innerHTML = `
-            <td><code>${id}</code></td>
-            <td>${dev.type}</td>
-            <td>${statusBadge}</td>
-            <td>${lastSeen}</td>
-            <td>
-                <input type="text" id="cmd-${id}" placeholder="Command" style="width: 120px;">
-                <button onclick="sendSimpleCommand('${id}')">Send</button>
-                <button class="secondary" onclick="openJsonModal('${id}')">JSON</button>
-            </td>
+    devicesTbody.innerHTML = filtered.map(([id, d]) => {
+        const statusClass = `status-${d.status}`;
+        const lastSeen = d.last_seen ? new Date(d.last_seen * 1000).toLocaleTimeString() : '—';
+        return `
+            <tr class="${selectedDeviceId === id ? 'selected' : ''}" data-device-id="${id}">
+                <td><code>${id}</code></td>
+                <td>${d.type}</td>
+                <td><span class="status-badge ${statusClass}">${d.status}</span></td>
+                <td>${lastSeen}</td>
+                <td>
+                    <button class="select-device" data-id="${id}">Select</button>
+                    <button class="json-cmd" data-id="${id}">JSON</button>
+                </td>
+            </tr>
         `;
-        devicesTbody.appendChild(tr);
-    }
+    }).join('');
+
+    // Обработчики выбора устройства
+    document.querySelectorAll('.select-device').forEach(btn => {
+        btn.addEventListener('click', () => {
+            selectedDeviceId = btn.dataset.id;
+            renderTable();
+            renderQuickCommands(selectedDeviceId);
+        });
+    });
+    document.querySelectorAll('.json-cmd').forEach(btn => {
+        btn.addEventListener('click', () => {
+            modalDeviceId.value = btn.dataset.id;
+            modalCommand.value = '';
+            modalPayload.value = '{}';
+            commandModal.style.display = 'block';
+        });
+    });
 }
 
-function sendSimpleCommand(deviceId) {
-    const input = document.getElementById(`cmd-${deviceId}`);
-    const command = input.value.trim();
-    if (!command) {
-        alert('Please enter a command');
+function renderQuickCommands(deviceId) {
+    const device = devices[deviceId];
+    if (!device || !device.capabilities || device.capabilities.length === 0) {
+        quickPanel.style.display = 'none';
         return;
     }
-    sendCommand(deviceId, command, {});
-    input.value = '';
+    quickPanel.style.display = 'block';
+    quickButtons.innerHTML = device.capabilities.map(cmd =>
+        `<button class="quick-cmd" data-cmd="${cmd}">${cmd}</button>`
+    ).join('');
+    document.querySelectorAll('.quick-cmd').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const cmd = btn.dataset.cmd;
+            sendCommand(deviceId, cmd, {});
+        });
+    });
 }
 
-function sendCommand(deviceId, command, payload = {}) {
+function sendCommand(deviceId, command, payload) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-        alert('Not connected to Core');
-        addLogEntry('error', 'Cannot send command: WebSocket not connected');
+        alert('Not connected');
         return;
     }
-    const msg = {
-        device_id: deviceId,
-        command: command,
-        payload: payload
-    };
+    const msg = { type: 'command', device_id: deviceId, command, payload };
     ws.send(JSON.stringify(msg));
     addLogEntry('command', `→ ${deviceId}: ${command} ${JSON.stringify(payload)}`);
-}
-
-function openJsonModal(deviceId) {
-    modalDeviceId.value = deviceId;
-    modalCommand.value = '';
-    modalPayload.value = '{}';
-    modal.style.display = 'block';
 }
 
 function addLogEntry(category, message) {
     const li = document.createElement('li');
     const time = new Date().toLocaleTimeString();
-    li.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-cat">[${category}]</span> ${message}`;
+    li.innerHTML = `<span class="log-time">[${time}]</span> [${category}] ${message}`;
     logList.appendChild(li);
-    const container = document.getElementById('log-container');
-    container.scrollTop = container.scrollHeight;
-    if (logList.children.length > 100) {
-        logList.removeChild(logList.firstChild);
-    }
+    document.getElementById('log-container').scrollTop = logList.scrollHeight;
+    if (logList.children.length > 100) logList.removeChild(logList.firstChild);
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    connectWebSocket();
+// Event listeners
+document.getElementById('clear-logs').onclick = () => logList.innerHTML = '';
 
-    clearLogsBtn.addEventListener('click', () => {
-        logList.innerHTML = '';
-    });
+document.querySelector('#command-modal .close').onclick = () => commandModal.style.display = 'none';
+document.getElementById('send-json-command').onclick = () => {
+    const deviceId = modalDeviceId.value;
+    const command = modalCommand.value.trim();
+    let payload = {};
+    try { payload = JSON.parse(modalPayload.value); } catch { alert('Invalid JSON'); return; }
+    if (!command) { alert('Command required'); return; }
+    sendCommand(deviceId, command, payload);
+    commandModal.style.display = 'none';
+};
 
-    closeModalBtn.onclick = () => modal.style.display = 'none';
-    window.onclick = (event) => {
-        if (event.target === modal) modal.style.display = 'none';
-    };
+document.getElementById('confirm-yes').onclick = () => {
+    if (pendingConfirmation) {
+        const resp = {
+            type: 'confirm_response',
+            id: pendingConfirmation.id,
+            device_id: pendingConfirmation.device_id,
+            command: pendingConfirmation.command,
+            params: pendingConfirmation.params,
+            approved: true
+        };
+        ws.send(JSON.stringify(resp));
+        addLogEntry('command', `✓ Confirmed: ${pendingConfirmation.command} on ${pendingConfirmation.device_id}`);
+    }
+    confirmModal.style.display = 'none';
+    pendingConfirmation = null;
+};
+document.getElementById('confirm-no').onclick = () => {
+    if (pendingConfirmation) {
+        addLogEntry('command', `✗ Rejected: ${pendingConfirmation.command} on ${pendingConfirmation.device_id}`);
+    }
+    confirmModal.style.display = 'none';
+    pendingConfirmation = null;
+};
+window.onclick = (e) => {
+    if (e.target === commandModal) commandModal.style.display = 'none';
+    if (e.target === confirmModal) confirmModal.style.display = 'none';
+};
 
-    sendJsonBtn.onclick = () => {
-        const deviceId = modalDeviceId.value;
-        const command = modalCommand.value.trim();
-        let payload = {};
-        try {
-            payload = JSON.parse(modalPayload.value);
-        } catch (e) {
-            alert('Invalid JSON payload');
-            return;
-        }
-        if (!command) {
-            alert('Command is required');
-            return;
-        }
-        sendCommand(deviceId, command, payload);
-        modal.style.display = 'none';
-    };
-});
-
-window.sendSimpleCommand = sendSimpleCommand;
-window.openJsonModal = openJsonModal;
+// Start
+connectWebSocket();
