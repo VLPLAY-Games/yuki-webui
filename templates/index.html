@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Yuki System WebUI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="header">
+        <h1>🌌 Yuki System WebUI</h1>
+        <div id="connection-status" class="status-indicator disconnected">
+            <span class="dot"></span>
+            <span id="status-text">Disconnected</span>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📡 Connected Devices</h2>
+        <table id="devices-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Last Seen</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>📋 Event Log</h2>
+        <div id="log-container">
+            <ul id="log-list"></ul>
+        </div>
+        <button id="clear-logs">Clear</button>
+    </div>
+
+    <div id="command-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>Send JSON Command</h3>
+            <label for="modal-device-id">Device ID:</label>
+            <input type="text" id="modal-device-id" readonly>
+            <label for="modal-command">Command:</label>
+            <input type="text" id="modal-command" placeholder="e.g., set_volume">
+            <label for="modal-payload">Payload (JSON):</label>
+            <textarea id="modal-payload" rows="4" placeholder='{"value": 50}'></textarea>
+            <button id="send-json-command">Send</button>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

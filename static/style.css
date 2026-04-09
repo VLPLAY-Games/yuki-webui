@@ -1,0 +1,244 @@
+:root {
+    --bg-color: #0b0f14;
+    --card-bg: #1a1f26;
+    --text-color: #e0e0e0;
+    --accent: #6c5ce7;
+    --success: #00b894;
+    --warning: #fdcb6e;
+    --error: #d63031;
+    --border-color: #2d3436;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    padding: 20px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    margin: 0;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 30px;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 15px;
+}
+
+h1, h2 {
+    color: var(--text-color);
+    font-weight: 400;
+}
+
+h2 {
+    border-left: 4px solid var(--accent);
+    padding-left: 15px;
+    margin-top: 30px;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 20px;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+}
+
+.status-indicator .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: var(--error);
+}
+
+.status-indicator.connected .dot {
+    background-color: var(--success);
+    box-shadow: 0 0 8px var(--success);
+}
+
+.section {
+    background-color: var(--card-bg);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 30px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+}
+
+th, td {
+    padding: 12px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+th {
+    color: var(--accent);
+    font-weight: 500;
+    text-transform: uppercase;
+    font-size: 0.9em;
+    letter-spacing: 0.5px;
+}
+
+tr:hover {
+    background-color: rgba(108, 92, 231, 0.05);
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.85em;
+    font-weight: 500;
+    text-transform: capitalize;
+}
+
+.status-online {
+    background-color: rgba(0, 184, 148, 0.2);
+    color: var(--success);
+}
+
+.status-offline {
+    background-color: rgba(214, 48, 49, 0.2);
+    color: var(--error);
+}
+
+.status-busy, .status-error {
+    background-color: rgba(253, 203, 110, 0.2);
+    color: var(--warning);
+}
+
+button {
+    background-color: var(--accent);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background-color 0.2s;
+    border: 1px solid transparent;
+}
+
+button:hover {
+    background-color: #7d6ef0;
+}
+
+button.secondary {
+    background-color: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+}
+
+button.secondary:hover {
+    background-color: var(--border-color);
+}
+
+input[type=text], textarea {
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 0.95em;
+    width: 200px;
+    margin-right: 10px;
+}
+
+textarea {
+    width: 100%;
+    resize: vertical;
+}
+
+#log-container {
+    max-height: 250px;
+    overflow-y: auto;
+    background-color: var(--bg-color);
+    border-radius: 8px;
+    padding: 10px;
+    margin: 15px 0;
+    border: 1px solid var(--border-color);
+}
+
+#log-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-family: 'Consolas', monospace;
+    font-size: 0.9em;
+}
+
+#log-list li {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--border-color);
+    color: #b0b0b0;
+}
+
+#log-list li:last-child {
+    border-bottom: none;
+}
+
+.log-time {
+    color: var(--accent);
+    margin-right: 10px;
+}
+
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.7);
+}
+
+.modal-content {
+    background-color: var(--card-bg);
+    margin: 10% auto;
+    padding: 25px;
+    border-radius: 12px;
+    width: 500px;
+    border: 1px solid var(--border-color);
+}
+
+.close {
+    color: var(--text-color);
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close:hover {
+    color: var(--accent);
+}
+
+.modal-content h3 {
+    margin-top: 0;
+}
+
+.modal-content label {
+    display: block;
+    margin: 15px 0 5px;
+}
+
+.modal-content input, .modal-content textarea {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.modal-content button {
+    margin-top: 20px;
+    width: 100%;
+}
