@@ -1,34 +1,51 @@
+// script.js
 let ws = null;
 let reconnectTimer = null;
 const RECONNECT_DELAY = 3000;
 let devices = {};
 let pendingConfirmation = null;
 let pendingAuthRequest = null;
-
-// ID устройства, для которого в данный момент открыта панель быстрых команд
 let expandedQuickCommandsId = null;
-
-// Для отслеживания уже показанных уведомлений о pending-устройствах
 const notifiedPendingIds = new Set();
 
+// Состояние UI
+let currentGroup = 'all';
+let searchQuery = '';
+let sortColumn = 'id';
+let sortDirection = 'asc'; // 'asc' или 'desc'
+
+// История команд
+let commandHistory = [];
+const MAX_HISTORY = 100;
+
+// Настройки удаления (храним в localStorage)
+let skipDeleteConfirm = localStorage.getItem('skipDeleteConfirm') === 'true';
+
+// DOM элементы
 const statusIndicator = document.getElementById('connection-status');
 const statusText = document.getElementById('status-text');
 const devicesTbody = document.querySelector('#devices-table tbody');
 const groupTabs = document.getElementById('group-tabs');
 const logList = document.getElementById('log-list');
-
+const historyList = document.getElementById('history-list');
+const searchInput = document.getElementById('search-input');
+const clearSearchBtn = document.getElementById('clear-search');
+const exportCsvBtn = document.getElementById('export-csv');
 const commandModal = document.getElementById('command-modal');
 const confirmModal = document.getElementById('confirm-modal');
 const authModal = document.getElementById('auth-modal');
+const deleteModal = document.getElementById('delete-modal');
 const modalDeviceId = document.getElementById('modal-device-id');
 const modalCommand = document.getElementById('modal-command');
 const modalPayload = document.getElementById('modal-payload');
 const confirmText = document.getElementById('confirm-text');
 const authText = document.getElementById('auth-text');
+const deleteDeviceIdSpan = document.getElementById('delete-device-id');
+const dontAskDeleteCheck = document.getElementById('dont-ask-delete');
 
-let currentGroup = 'all';
+let deviceToDelete = null;
 
-// Запрос разрешения на уведомления при загрузке
+// === Инициализация ===
 function requestNotificationPermission() {
     if (!('Notification' in window)) {
         addLogEntry('warning', 'This browser does not support desktop notifications');
@@ -64,11 +81,9 @@ function updateNotificationButtonState() {
     }
 }
 
-// Показ уведомления о новом pending-устройстве
 function showPendingNotification(deviceId, deviceType) {
     if (Notification.permission !== 'granted') return;
-    if (notifiedPendingIds.has(deviceId)) return; // уже показывали
-
+    if (notifiedPendingIds.has(deviceId)) return;
     const title = 'New device pending authorization';
     const options = {
         body: `Device ${deviceId} (${deviceType}) is waiting for approval.`,
@@ -83,7 +98,6 @@ function showPendingNotification(deviceId, deviceType) {
         if (pendingTab) pendingTab.click();
         notification.close();
     };
-
     notifiedPendingIds.add(deviceId);
     addLogEntry('system', `Notification sent for pending device ${deviceId}`);
 }
@@ -97,6 +111,7 @@ function checkAndNotifyPending() {
     });
 }
 
+// === WebSocket ===
 function connectWebSocket() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
     ws = new WebSocket('ws://localhost:8000/webui');
@@ -104,7 +119,6 @@ function connectWebSocket() {
         updateConnectionStatus(true);
         addLogEntry('system', 'Connected to Core');
         if (reconnectTimer) clearTimeout(reconnectTimer);
-        // Запрашиваем информацию о токене при подключении
         ws.send(JSON.stringify({ type: 'get_token_info' }));
     };
     ws.onmessage = (event) => {
@@ -153,21 +167,15 @@ function handleMessage(data) {
     } else if (data.type === 'device_auth_request') {
         const { device_id, device_type, capabilities } = data.payload;
         pendingAuthRequest = { id: data.id, device_id, device_type, capabilities };
-
         document.getElementById('auth-device-id').textContent = device_id;
         document.getElementById('auth-device-type').textContent = device_type;
-
         const capsContainer = document.getElementById('auth-capabilities-list');
-        capsContainer.innerHTML = capabilities.map(cap =>
-            `<span class="capability-chip">${cap}</span>`
-        ).join('');
-
+        capsContainer.innerHTML = capabilities.map(cap => `<span class="capability-chip">${cap}</span>`).join('');
         authModal.style.display = 'block';
     } else if (data.type === 'token_info') {
         updateTokenInfo(data.payload);
     } else if (data.type === 'token_rotated') {
         addLogEntry('system', 'Token rotated successfully');
-        // Запрашиваем обновлённую информацию
         ws.send(JSON.stringify({ type: 'get_token_info' }));
     }
 }
@@ -188,9 +196,8 @@ function formatTime(seconds) {
     return `${h}h ${m}m ${s}s`;
 }
 
+// === Группы и сортировка/фильтрация ===
 function renderGroups() {
-    const types = new Set();
-    Object.values(devices).forEach(d => types.add(d.type));
     const groups = ['all', 'online', 'pending', 'offline'];
     groupTabs.innerHTML = groups.map(g =>
         `<button class="tab ${currentGroup === g ? 'active' : ''}" data-group="${g}">${g.charAt(0).toUpperCase() + g.slice(1)}</button>`
@@ -204,28 +211,64 @@ function renderGroups() {
     });
 }
 
-function renderTable() {
-    expandedQuickCommandsId = null;
-
-    const filtered = Object.entries(devices).filter(([id, d]) => {
-        if (currentGroup === 'all') return true;
+function getFilteredAndSortedDevices() {
+    let entries = Object.entries(devices).filter(([id, d]) => {
+        // Группа
         if (currentGroup === 'online') return d.status === 'online';
         if (currentGroup === 'pending') return d.status === 'pending';
         if (currentGroup === 'offline') return d.status === 'offline';
         return true;
+    }).filter(([id, d]) => {
+        // Поиск
+        if (!searchQuery) return true;
+        const query = searchQuery.toLowerCase();
+        return id.toLowerCase().includes(query) || d.type.toLowerCase().includes(query);
     });
 
+    // Сортировка
+    entries.sort((a, b) => {
+        let valA, valB;
+        const [idA, devA] = a;
+        const [idB, devB] = b;
+        switch (sortColumn) {
+            case 'id':
+                valA = idA.toLowerCase();
+                valB = idB.toLowerCase();
+                break;
+            case 'type':
+                valA = devA.type.toLowerCase();
+                valB = devB.type.toLowerCase();
+                break;
+            case 'status':
+                valA = devA.status;
+                valB = devB.status;
+                break;
+            case 'last_seen':
+                valA = devA.last_seen || 0;
+                valB = devB.last_seen || 0;
+                break;
+            default:
+                return 0;
+        }
+        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+    });
+    return entries;
+}
+
+function renderTable() {
+    expandedQuickCommandsId = null;
+    const filtered = getFilteredAndSortedDevices();
     if (filtered.length === 0) {
         devicesTbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">No devices</td></tr>`;
         return;
     }
-
     devicesTbody.innerHTML = filtered.map(([id, d]) => {
         const statusClass = `status-${d.status}`;
         const lastSeen = d.last_seen ? new Date(d.last_seen * 1000).toLocaleTimeString() : '—';
         const isOnline = d.status === 'online';
         const isPending = d.status === 'pending';
-
         let actionsHtml = '';
         if (isPending) {
             actionsHtml = `<button class="approve-device" data-id="${id}">Approve</button>
@@ -238,7 +281,6 @@ function renderTable() {
         } else {
             actionsHtml = `<button class="remove-device" data-id="${id}">Remove</button>`;
         }
-
         return `
             <tr data-device-id="${id}">
                 <td><code>${id}</code></td>
@@ -250,10 +292,10 @@ function renderTable() {
         `;
     }).join('');
 
+    // Обработчики кнопок
     document.querySelectorAll('.send-cmd').forEach(btn => {
         btn.addEventListener('click', () => toggleQuickCommandsRow(btn.dataset.id));
     });
-
     document.querySelectorAll('.json-cmd').forEach(btn => {
         btn.addEventListener('click', () => {
             modalDeviceId.value = btn.dataset.id;
@@ -262,7 +304,6 @@ function renderTable() {
             commandModal.style.display = 'block';
         });
     });
-
     document.querySelectorAll('.approve-device').forEach(btn => {
         btn.addEventListener('click', () => approveDevice(btn.dataset.id, true));
     });
@@ -273,38 +314,43 @@ function renderTable() {
         btn.addEventListener('click', () => disconnectDevice(btn.dataset.id));
     });
     document.querySelectorAll('.remove-device').forEach(btn => {
-        btn.addEventListener('click', () => removeDevice(btn.dataset.id));
+        btn.addEventListener('click', () => promptDeleteDevice(btn.dataset.id));
+    });
+
+    updateSortIndicators();
+}
+
+function updateSortIndicators() {
+    document.querySelectorAll('th.sortable').forEach(th => {
+        th.classList.remove('sort-asc', 'sort-desc');
+        if (th.dataset.sort === sortColumn) {
+            th.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+        }
     });
 }
 
+// === Быстрые команды ===
 function toggleQuickCommandsRow(deviceId) {
     const device = devices[deviceId];
     if (!device || device.status !== 'online') {
         addLogEntry('warning', `Cannot send commands to offline device ${deviceId}`);
         return;
     }
-
     if (expandedQuickCommandsId === deviceId) {
         removeQuickCommandsRow();
         expandedQuickCommandsId = null;
         return;
     }
-
     removeQuickCommandsRow();
-
     const deviceRow = document.querySelector(`tr[data-device-id="${deviceId}"]`);
     if (!deviceRow) return;
-
     const quickRow = document.createElement('tr');
     quickRow.className = 'quick-commands-row';
     quickRow.id = `quick-row-${deviceId}`;
-
     const td = document.createElement('td');
     td.colSpan = 5;
-
     const container = document.createElement('div');
     container.className = 'quick-commands-container';
-
     const capabilities = device.capabilities || [];
     if (capabilities.length === 0) {
         const span = document.createElement('span');
@@ -317,18 +363,19 @@ function toggleQuickCommandsRow(deviceId) {
             const btn = document.createElement('button');
             btn.className = 'quick-cmd';
             btn.textContent = cmd;
-            btn.addEventListener('click', () => {
-                sendCommand(deviceId, cmd, {});
+            btn.addEventListener('click', (e) => {
+                if (btn.classList.contains('loading')) return;
+                btn.classList.add('loading');
+                sendCommand(deviceId, cmd, {}, () => {
+                    btn.classList.remove('loading');
+                });
             });
             container.appendChild(btn);
         });
     }
-
     td.appendChild(container);
     quickRow.appendChild(td);
-
     deviceRow.insertAdjacentElement('afterend', quickRow);
-
     expandedQuickCommandsId = deviceId;
 }
 
@@ -339,22 +386,58 @@ function removeQuickCommandsRow() {
     }
 }
 
-function sendCommand(deviceId, command, payload) {
+// === Отправка команд с индикацией ===
+function sendCommand(deviceId, command, payload, callback) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
         alert('Not connected');
+        if (callback) callback();
         return;
     }
     const msg = { type: 'command', device_id: deviceId, command, payload };
     ws.send(JSON.stringify(msg));
     addLogEntry('command', `→ ${deviceId}: ${command} ${JSON.stringify(payload)}`);
+    addToHistory(deviceId, command, payload);
+    // Симуляция завершения (в реальности нужно ждать ответ, но пока просто таймаут)
+    if (callback) {
+        setTimeout(callback, 500);
+    }
 }
 
+function addToHistory(deviceId, command, payload) {
+    const entry = {
+        timestamp: new Date(),
+        deviceId,
+        command,
+        payload: JSON.stringify(payload)
+    };
+    commandHistory.unshift(entry);
+    if (commandHistory.length > MAX_HISTORY) commandHistory.pop();
+    renderHistory();
+}
+
+function renderHistory() {
+    if (!historyList) return;
+    if (commandHistory.length === 0) {
+        historyList.innerHTML = '<li style="justify-content:center; opacity:0.7;">No commands yet</li>';
+        return;
+    }
+    historyList.innerHTML = commandHistory.map(entry => {
+        const timeStr = entry.timestamp.toLocaleTimeString();
+        return `<li>
+            <span class="history-time">[${timeStr}]</span>
+            <span class="history-device">${entry.deviceId}</span>
+            <span class="history-command">${entry.command}</span>
+            <span class="history-payload">${entry.payload}</span>
+        </li>`;
+    }).join('');
+}
+
+// === Действия с устройствами ===
 function approveDevice(deviceId, approved) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     const msg = pendingAuthRequest && pendingAuthRequest.device_id === deviceId
         ? { type: 'device_auth_response', id: pendingAuthRequest.id, device_id: deviceId, approved }
         : { type: 'device_auth_response', device_id: deviceId, approved };
-
     ws.send(JSON.stringify(msg));
     if (pendingAuthRequest && pendingAuthRequest.device_id === deviceId) {
         pendingAuthRequest = null;
@@ -369,12 +452,183 @@ function disconnectDevice(deviceId) {
     addLogEntry('action', `Disconnect device ${deviceId}`);
 }
 
-function removeDevice(deviceId) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    if (confirm(`Remove device ${deviceId} from authorized list?`)) {
-        ws.send(JSON.stringify({ type: 'remove_device', device_id: deviceId }));
-        addLogEntry('action', `Remove device ${deviceId}`);
+function promptDeleteDevice(deviceId) {
+    if (skipDeleteConfirm) {
+        performDeleteDevice(deviceId);
+        return;
     }
+    deviceToDelete = deviceId;
+    deleteDeviceIdSpan.textContent = deviceId;
+    deleteModal.style.display = 'block';
+}
+
+function performDeleteDevice(deviceId) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'remove_device', device_id: deviceId }));
+    addLogEntry('action', `Remove device ${deviceId}`);
+    deleteModal.style.display = 'none';
+    deviceToDelete = null;
+}
+
+// === Экспорт CSV ===
+function exportToCsv() {
+    const filtered = getFilteredAndSortedDevices();
+    const headers = ['ID', 'Type', 'Status', 'Last Seen'];
+    const rows = filtered.map(([id, d]) => [
+        id,
+        d.type,
+        d.status,
+        d.last_seen ? new Date(d.last_seen * 1000).toLocaleString() : ''
+    ]);
+    let csvContent = headers.join(',') + '\n';
+    rows.forEach(row => {
+        csvContent += row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',') + '\n';
+    });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `devices_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// === Логи ===
+function addLogEntry(category, message) {
+    const li = document.createElement('li');
+    const time = new Date().toLocaleTimeString();
+    li.innerHTML = `<span class="log-time">[${time}]</span> [${category}] ${message}`;
+    logList.appendChild(li);
+    document.getElementById('log-container').scrollTop = logList.scrollHeight;
+    if (logList.children.length > 100) logList.removeChild(logList.firstChild);
+}
+
+// === Обработчики UI ===
+function initUI() {
+    // Поиск
+    searchInput.addEventListener('input', (e) => {
+        searchQuery = e.target.value;
+        renderTable();
+    });
+    clearSearchBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        searchQuery = '';
+        renderTable();
+    });
+
+    // Сортировка
+    document.querySelectorAll('th.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const column = th.dataset.sort;
+            if (sortColumn === column) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortColumn = column;
+                sortDirection = 'asc';
+            }
+            renderTable();
+        });
+    });
+
+    // Экспорт
+    exportCsvBtn.addEventListener('click', exportToCsv);
+
+    // Сворачивание истории
+    const historyHeader = document.getElementById('history-header');
+    const historySection = document.querySelector('.collapsible');
+    historyHeader.addEventListener('click', () => {
+        historySection.classList.toggle('collapsed');
+    });
+
+    // Кнопки модалок
+    document.getElementById('clear-logs').onclick = () => logList.innerHTML = '';
+    document.getElementById('clear-history').onclick = () => {
+        commandHistory = [];
+        renderHistory();
+    };
+
+    document.querySelector('#command-modal .close').onclick = () => commandModal.style.display = 'none';
+    document.querySelector('#command-modal .close-modal').onclick = () => commandModal.style.display = 'none';
+    document.getElementById('send-json-command').onclick = () => {
+        const deviceId = modalDeviceId.value;
+        const command = modalCommand.value.trim();
+        let payload = {};
+        try { payload = JSON.parse(modalPayload.value); } catch { alert('Invalid JSON'); return; }
+        if (!command) { alert('Command required'); return; }
+        const btn = document.getElementById('send-json-command');
+        btn.classList.add('loading');
+        sendCommand(deviceId, command, payload, () => {
+            btn.classList.remove('loading');
+        });
+        commandModal.style.display = 'none';
+    };
+
+    document.getElementById('confirm-yes').onclick = () => {
+        if (pendingConfirmation) {
+            const resp = {
+                type: 'confirm_response',
+                id: pendingConfirmation.id,
+                device_id: pendingConfirmation.device_id,
+                command: pendingConfirmation.command,
+                params: pendingConfirmation.params,
+                approved: true
+            };
+            ws.send(JSON.stringify(resp));
+            addLogEntry('command', `Confirmed: ${pendingConfirmation.command} on ${pendingConfirmation.device_id}`);
+        }
+        confirmModal.style.display = 'none';
+        pendingConfirmation = null;
+    };
+    document.getElementById('confirm-no').onclick = () => {
+        if (pendingConfirmation) {
+            addLogEntry('command', `Rejected: ${pendingConfirmation.command} on ${pendingConfirmation.device_id}`);
+        }
+        confirmModal.style.display = 'none';
+        pendingConfirmation = null;
+    };
+
+    document.getElementById('auth-approve').onclick = () => {
+        if (pendingAuthRequest) approveDevice(pendingAuthRequest.device_id, true);
+        authModal.style.display = 'none';
+    };
+    document.getElementById('auth-deny').onclick = () => {
+        if (pendingAuthRequest) approveDevice(pendingAuthRequest.device_id, false);
+        authModal.style.display = 'none';
+    };
+
+    // Удаление
+    document.getElementById('delete-confirm').onclick = () => {
+        if (dontAskDeleteCheck.checked) {
+            localStorage.setItem('skipDeleteConfirm', 'true');
+            skipDeleteConfirm = true;
+        }
+        if (deviceToDelete) performDeleteDevice(deviceToDelete);
+    };
+    document.getElementById('delete-cancel').onclick = () => {
+        deleteModal.style.display = 'none';
+        deviceToDelete = null;
+    };
+
+    window.onclick = (e) => {
+        if (e.target === commandModal) commandModal.style.display = 'none';
+        if (e.target === confirmModal) confirmModal.style.display = 'none';
+        if (e.target === authModal) authModal.style.display = 'none';
+        if (e.target === deleteModal) deleteModal.style.display = 'none';
+    };
+
+    const enableNotificationsBtn = document.getElementById('enable-notifications');
+    if (enableNotificationsBtn) {
+        enableNotificationsBtn.addEventListener('click', requestNotificationPermission);
+    }
+    const rotateTokenBtn = document.getElementById('rotate-token');
+    if (rotateTokenBtn) {
+        rotateTokenBtn.addEventListener('click', rotateToken);
+    }
+
+    // Инициализация истории
+    renderHistory();
 }
 
 function rotateToken() {
@@ -388,93 +642,13 @@ function rotateToken() {
     }
 }
 
-function addLogEntry(category, message) {
-    const li = document.createElement('li');
-    const time = new Date().toLocaleTimeString();
-    li.innerHTML = `<span class="log-time">[${time}]</span> [${category}] ${message}`;
-    logList.appendChild(li);
-    document.getElementById('log-container').scrollTop = logList.scrollHeight;
-    if (logList.children.length > 100) logList.removeChild(logList.firstChild);
-}
-
-// Обработчики модальных окон и кнопок
-document.getElementById('clear-logs').onclick = () => logList.innerHTML = '';
-
-document.querySelector('#command-modal .close').onclick = () => commandModal.style.display = 'none';
-document.getElementById('send-json-command').onclick = () => {
-    const deviceId = modalDeviceId.value;
-    const command = modalCommand.value.trim();
-    let payload = {};
-    try { payload = JSON.parse(modalPayload.value); } catch { alert('Invalid JSON'); return; }
-    if (!command) { alert('Command required'); return; }
-    sendCommand(deviceId, command, payload);
-    commandModal.style.display = 'none';
-};
-
-document.getElementById('confirm-yes').onclick = () => {
-    if (pendingConfirmation) {
-        const resp = {
-            type: 'confirm_response',
-            id: pendingConfirmation.id,
-            device_id: pendingConfirmation.device_id,
-            command: pendingConfirmation.command,
-            params: pendingConfirmation.params,
-            approved: true
-        };
-        ws.send(JSON.stringify(resp));
-        addLogEntry('command', `Confirmed: ${pendingConfirmation.command} on ${pendingConfirmation.device_id}`);
-    }
-    confirmModal.style.display = 'none';
-    pendingConfirmation = null;
-};
-document.getElementById('confirm-no').onclick = () => {
-    if (pendingConfirmation) {
-        addLogEntry('command', `Rejected: ${pendingConfirmation.command} on ${pendingConfirmation.device_id}`);
-    }
-    confirmModal.style.display = 'none';
-    pendingConfirmation = null;
-};
-
-document.getElementById('auth-approve').onclick = () => {
-    if (pendingAuthRequest) {
-        approveDevice(pendingAuthRequest.device_id, true);
-    }
-    authModal.style.display = 'none';
-};
-document.getElementById('auth-deny').onclick = () => {
-    if (pendingAuthRequest) {
-        approveDevice(pendingAuthRequest.device_id, false);
-    }
-    authModal.style.display = 'none';
-};
-
-window.onclick = (e) => {
-    if (e.target === commandModal) commandModal.style.display = 'none';
-    if (e.target === confirmModal) confirmModal.style.display = 'none';
-    if (e.target === authModal) authModal.style.display = 'none';
-};
-
-const enableNotificationsBtn = document.getElementById('enable-notifications');
-if (enableNotificationsBtn) {
-    enableNotificationsBtn.addEventListener('click', requestNotificationPermission);
-}
-
-// Кнопка ротации токена
-const rotateTokenBtn = document.getElementById('rotate-token');
-if (rotateTokenBtn) {
-    rotateTokenBtn.addEventListener('click', rotateToken);
-}
-
 document.addEventListener('DOMContentLoaded', () => {
     if ('Notification' in window) {
         updateNotificationButtonState();
-        if (Notification.permission === 'default') {
-            // Можно автоматически запросить при желании
-        }
     } else {
         const btn = document.getElementById('enable-notifications');
         if (btn) btn.style.display = 'none';
     }
+    initUI();
+    connectWebSocket();
 });
-
-connectWebSocket();

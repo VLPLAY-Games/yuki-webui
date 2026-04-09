@@ -1,17 +1,19 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
     <title>Yuki System WebUI</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="header">
         <h1>Yuki System WebUI</h1>
-        <div style="display: flex; align-items: center; gap: 20px;">
+        <div class="header-actions">
             {% if auth_enabled %}
-            <span style="color: var(--accent);">{{ session.get('username', 'User') }}</span>
-            <a href="{{ url_for('logout') }}" style="color: var(--text-color); text-decoration: none;">Logout</a>
+            <span class="user-name">{{ session.get('username', 'User') }}</span>
+            <a href="{{ url_for('logout') }}" class="logout-link">Logout</a>
             {% endif %}
             <button id="enable-notifications" class="secondary">Enable Notifications</button>
             <button id="rotate-token" class="secondary" style="background-color: #e17055;">Rotate Token</button>
@@ -23,25 +25,50 @@
     </div>
 
     <!-- Информация о токене -->
-    <div id="token-info" style="margin-bottom: 15px; padding: 10px; background: var(--card-bg); border-radius: 8px; border: 1px solid var(--border-color); font-size: 0.9em;">
+    <div id="token-info" class="token-info-panel">
         Token info loading...
+    </div>
+
+    <!-- Панель поиска и экспорта -->
+    <div class="controls-bar">
+        <div class="search-wrapper">
+            <input type="text" id="search-input" placeholder="Search by ID or type..." class="search-input">
+            <button id="clear-search" class="icon-btn" title="Clear search">✕</button>
+        </div>
+        <button id="export-csv" class="secondary">Export CSV</button>
     </div>
 
     <div class="section">
         <h2>Devices</h2>
         <div class="tabs" id="group-tabs"></div>
-        <table id="devices-table">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Last Seen</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+        <div class="table-responsive">
+            <table id="devices-table">
+                <thead>
+                    <tr>
+                        <th data-sort="id" class="sortable">ID <span class="sort-indicator"></span></th>
+                        <th data-sort="type" class="sortable">Type <span class="sort-indicator"></span></th>
+                        <th data-sort="status" class="sortable">Status <span class="sort-indicator"></span></th>
+                        <th data-sort="last_seen" class="sortable">Last Seen <span class="sort-indicator"></span></th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- История команд -->
+    <div class="section collapsible">
+        <div class="section-header" id="history-header">
+            <h2>Command History</h2>
+            <button id="clear-history" class="secondary small">Clear</button>
+            <span class="toggle-icon">▼</span>
+        </div>
+        <div id="history-container" class="collapsible-content">
+            <div class="history-list-wrapper">
+                <ul id="history-list"></ul>
+            </div>
+        </div>
     </div>
 
     <div class="section">
@@ -49,7 +76,7 @@
         <div id="log-container">
             <ul id="log-list"></ul>
         </div>
-        <button id="clear-logs">Clear</button>
+        <button id="clear-logs" class="secondary">Clear</button>
     </div>
 
     <!-- Модальное окно для JSON-команд -->
@@ -63,7 +90,10 @@
             <input type="text" id="modal-command" placeholder="e.g., set_volume">
             <label for="modal-payload">Payload (JSON):</label>
             <textarea id="modal-payload" rows="4" placeholder='{"value": 50}'></textarea>
-            <button id="send-json-command">Send</button>
+            <div class="modal-actions">
+                <button id="send-json-command" class="primary">Send</button>
+                <button class="secondary close-modal">Cancel</button>
+            </div>
         </div>
     </div>
 
@@ -72,8 +102,8 @@
         <div class="modal-content">
             <h3>Confirm Dangerous Command</h3>
             <p id="confirm-text"></p>
-            <div style="display: flex; gap: 10px;">
-                <button id="confirm-yes" style="background-color: var(--error);">Yes, execute</button>
+            <div class="modal-actions">
+                <button id="confirm-yes" class="danger">Yes, execute</button>
                 <button id="confirm-no" class="secondary">Cancel</button>
             </div>
         </div>
@@ -105,6 +135,21 @@
             <div class="auth-actions">
                 <button id="auth-approve" class="primary">Approve</button>
                 <button id="auth-deny" class="secondary">Deny</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно подтверждения удаления устройства -->
+    <div id="delete-modal" class="modal">
+        <div class="modal-content">
+            <h3>Confirm Removal</h3>
+            <p>Remove device <strong id="delete-device-id"></strong> from authorized list?</p>
+            <label class="checkbox-label">
+                <input type="checkbox" id="dont-ask-delete"> Don't ask again
+            </label>
+            <div class="modal-actions">
+                <button id="delete-confirm" class="danger">Remove</button>
+                <button id="delete-cancel" class="secondary">Cancel</button>
             </div>
         </div>
     </div>
