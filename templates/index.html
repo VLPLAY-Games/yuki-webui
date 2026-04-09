@@ -7,7 +7,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>🌌 Yuki System WebUI</h1>
+        <h1>Yuki System WebUI</h1>
         <div style="display: flex; align-items: center; gap: 20px;">
             {% if auth_enabled %}
             <span style="color: var(--accent);">{{ session.get('username', 'User') }}</span>
@@ -21,7 +21,7 @@
     </div>
 
     <div class="section">
-        <h2>📡 Devices</h2>
+        <h2>Devices</h2>
         <div class="tabs" id="group-tabs"></div>
         <table id="devices-table">
             <thead>
@@ -37,20 +37,14 @@
         </table>
     </div>
 
-    <div class="section" id="quick-commands-panel" style="display: none;">
-        <h2>⚡ Quick Commands</h2>
-        <div id="quick-commands-buttons"></div>
-    </div>
-
     <div class="section">
-        <h2>📋 Event Log</h2>
+        <h2>Event Log</h2>
         <div id="log-container">
             <ul id="log-list"></ul>
         </div>
         <button id="clear-logs">Clear</button>
     </div>
 
-    <!-- Модальное окно для JSON-команд -->
     <div id="command-modal" class="modal">
         <div class="modal-content">
             <span class="close">&times;</span>
@@ -65,10 +59,9 @@
         </div>
     </div>
 
-    <!-- Модальное окно подтверждения опасной команды -->
     <div id="confirm-modal" class="modal">
         <div class="modal-content">
-            <h3>⚠️ Confirm Dangerous Command</h3>
+            <h3>Confirm Dangerous Command</h3>
             <p id="confirm-text"></p>
             <div style="display: flex; gap: 10px;">
                 <button id="confirm-yes" style="background-color: var(--error);">Yes, execute</button>

@@ -9,8 +9,6 @@ const statusIndicator = document.getElementById('connection-status');
 const statusText = document.getElementById('status-text');
 const devicesTbody = document.querySelector('#devices-table tbody');
 const groupTabs = document.getElementById('group-tabs');
-const quickPanel = document.getElementById('quick-commands-panel');
-const quickButtons = document.getElementById('quick-commands-buttons');
 const logList = document.getElementById('log-list');
 
 // Modals
@@ -69,7 +67,6 @@ function handleMessage(data) {
             renderTable();
         }
     } else if (data.type === 'confirm_command') {
-        // Запрос подтверждения опасной команды
         const { device_id, command, params } = data.payload;
         pendingConfirmation = { id: data.id, device_id, command, params };
         confirmText.textContent = `Execute "${command}" on ${device_id}?`;
@@ -99,56 +96,68 @@ function renderTable() {
     );
     if (filtered.length === 0) {
         devicesTbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">No devices</td></tr>`;
-        quickPanel.style.display = 'none';
         return;
     }
-    devicesTbody.innerHTML = filtered.map(([id, d]) => {
+
+    let html = '';
+    for (const [id, d] of filtered) {
         const statusClass = `status-${d.status}`;
         const lastSeen = d.last_seen ? new Date(d.last_seen * 1000).toLocaleTimeString() : '—';
-        return `
-            <tr class="${selectedDeviceId === id ? 'selected' : ''}" data-device-id="${id}">
+        const isSelected = (selectedDeviceId === id);
+        html += `
+            <tr class="${isSelected ? 'selected-row' : ''}" data-device-id="${id}">
                 <td><code>${id}</code></td>
                 <td>${d.type}</td>
                 <td><span class="status-badge ${statusClass}">${d.status}</span></td>
                 <td>${lastSeen}</td>
                 <td>
-                    <button class="select-device" data-id="${id}">Select</button>
+                    <button class="select-device" data-id="${id}">${isSelected ? 'Hide' : 'Commands'}</button>
                     <button class="json-cmd" data-id="${id}">JSON</button>
                 </td>
             </tr>
         `;
-    }).join('');
+        // Если устройство выбрано и у него есть capabilities, добавляем строку с панелью команд
+        if (isSelected && d.capabilities && d.capabilities.length > 0) {
+            html += `
+                <tr class="command-panel-row" data-for="${id}">
+                    <td colspan="5" class="command-panel">
+                        <div class="command-panel-buttons">
+                            ${d.capabilities.map(cmd => `<button class="quick-cmd" data-cmd="${cmd}" data-device="${id}">${cmd}</button>`).join('')}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+    }
+    devicesTbody.innerHTML = html;
 
-    // Обработчики выбора устройства
+    // Обработчики для кнопок "Select/Commands"
     document.querySelectorAll('.select-device').forEach(btn => {
-        btn.addEventListener('click', () => {
-            selectedDeviceId = btn.dataset.id;
+        btn.addEventListener('click', (e) => {
+            const id = btn.dataset.id;
+            if (selectedDeviceId === id) {
+                selectedDeviceId = null;
+            } else {
+                selectedDeviceId = id;
+            }
             renderTable();
-            renderQuickCommands(selectedDeviceId);
         });
     });
+
+    // Обработчики для JSON кнопок
     document.querySelectorAll('.json-cmd').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
             modalDeviceId.value = btn.dataset.id;
             modalCommand.value = '';
             modalPayload.value = '{}';
             commandModal.style.display = 'block';
         });
     });
-}
 
-function renderQuickCommands(deviceId) {
-    const device = devices[deviceId];
-    if (!device || !device.capabilities || device.capabilities.length === 0) {
-        quickPanel.style.display = 'none';
-        return;
-    }
-    quickPanel.style.display = 'block';
-    quickButtons.innerHTML = device.capabilities.map(cmd =>
-        `<button class="quick-cmd" data-cmd="${cmd}">${cmd}</button>`
-    ).join('');
+    // Обработчики для быстрых команд
     document.querySelectorAll('.quick-cmd').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            const deviceId = btn.dataset.device;
             const cmd = btn.dataset.cmd;
             sendCommand(deviceId, cmd, {});
         });

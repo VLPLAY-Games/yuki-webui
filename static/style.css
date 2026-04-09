@@ -86,7 +86,7 @@ th, td {
 }
 th { color: var(--accent); text-transform: uppercase; font-size: 0.9em; }
 tr:hover { background: rgba(108, 92, 231, 0.05); }
-tr.selected { background: rgba(108, 92, 231, 0.2); }
+tr.selected-row { background: rgba(108, 92, 231, 0.15); }
 
 .status-badge {
     display: inline-block;
@@ -117,14 +117,21 @@ button.secondary {
 }
 button.secondary:hover { background: var(--border-color); }
 
-#quick-commands-buttons {
+/* Стили для панели быстрых команд внутри таблицы */
+.command-panel {
+    padding: 8px 10px;
+    background: rgba(0,0,0,0.2);
+}
+.command-panel-buttons {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
 }
 .quick-cmd {
     background: var(--border-color);
     color: var(--text-color);
+    padding: 4px 10px;
+    font-size: 0.8em;
 }
 .quick-cmd:hover { background: var(--accent); }
 
