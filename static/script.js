@@ -72,14 +72,13 @@ function showPendingNotification(deviceId, deviceType) {
     const title = 'New device pending authorization';
     const options = {
         body: `Device ${deviceId} (${deviceType}) is waiting for approval.`,
-        icon: '/static/favicon.ico', // можно заменить на свой значок
+        icon: '/static/favicon.ico',
         tag: `pending-${deviceId}`,
-        requireInteraction: true, // остаётся до взаимодействия пользователя
+        requireInteraction: true,
     };
     const notification = new Notification(title, options);
     notification.onclick = () => {
         window.focus();
-        // Попытка переключиться на вкладку pending
         const pendingTab = document.querySelector('.tab[data-group="pending"]');
         if (pendingTab) pendingTab.click();
         notification.close();
@@ -89,7 +88,6 @@ function showPendingNotification(deviceId, deviceType) {
     addLogEntry('system', `Notification sent for pending device ${deviceId}`);
 }
 
-// Проверка устройств на наличие новых pending и показ уведомлений
 function checkAndNotifyPending() {
     if (!devices) return;
     Object.entries(devices).forEach(([id, device]) => {
@@ -106,6 +104,8 @@ function connectWebSocket() {
         updateConnectionStatus(true);
         addLogEntry('system', 'Connected to Core');
         if (reconnectTimer) clearTimeout(reconnectTimer);
+        // Запрашиваем информацию о токене при подключении
+        ws.send(JSON.stringify({ type: 'get_token_info' }));
     };
     ws.onmessage = (event) => {
         try {
@@ -143,7 +143,7 @@ function handleMessage(data) {
             devices = data.payload.devices;
             renderGroups();
             renderTable();
-            checkAndNotifyPending(); // проверяем и показываем уведомления
+            checkAndNotifyPending();
         }
     } else if (data.type === 'confirm_command') {
         const { device_id, command, params } = data.payload;
@@ -154,7 +154,6 @@ function handleMessage(data) {
         const { device_id, device_type, capabilities } = data.payload;
         pendingAuthRequest = { id: data.id, device_id, device_type, capabilities };
 
-        // Заполняем обновлённые поля
         document.getElementById('auth-device-id').textContent = device_id;
         document.getElementById('auth-device-type').textContent = device_type;
 
@@ -164,7 +163,29 @@ function handleMessage(data) {
         ).join('');
 
         authModal.style.display = 'block';
+    } else if (data.type === 'token_info') {
+        updateTokenInfo(data.payload);
+    } else if (data.type === 'token_rotated') {
+        addLogEntry('system', 'Token rotated successfully');
+        // Запрашиваем обновлённую информацию
+        ws.send(JSON.stringify({ type: 'get_token_info' }));
     }
+}
+
+function updateTokenInfo(payload) {
+    const infoDiv = document.getElementById('token-info');
+    if (!infoDiv) return;
+    const created = payload.created_at ? new Date(payload.created_at * 1000).toLocaleString() : 'N/A';
+    const expiresIn = payload.expires_in ? formatTime(payload.expires_in) : 'Never';
+    infoDiv.innerHTML = `Token created: ${created}<br>Expires in: ${expiresIn}`;
+}
+
+function formatTime(seconds) {
+    if (seconds <= 0) return 'Expired';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    return `${h}h ${m}m ${s}s`;
 }
 
 function renderGroups() {
@@ -184,7 +205,6 @@ function renderGroups() {
 }
 
 function renderTable() {
-    // Сбрасываем открытую панель при перерисовке
     expandedQuickCommandsId = null;
 
     const filtered = Object.entries(devices).filter(([id, d]) => {
@@ -230,7 +250,6 @@ function renderTable() {
         `;
     }).join('');
 
-    // Привязываем обработчики событий
     document.querySelectorAll('.send-cmd').forEach(btn => {
         btn.addEventListener('click', () => toggleQuickCommandsRow(btn.dataset.id));
     });
@@ -258,9 +277,6 @@ function renderTable() {
     });
 }
 
-/**
- * Показывает или скрывает строку с кнопками быстрых команд под указанным устройством.
- */
 function toggleQuickCommandsRow(deviceId) {
     const device = devices[deviceId];
     if (!device || device.status !== 'online') {
@@ -268,32 +284,27 @@ function toggleQuickCommandsRow(deviceId) {
         return;
     }
 
-    // Если уже открыта панель для этого же устройства – закрываем
     if (expandedQuickCommandsId === deviceId) {
         removeQuickCommandsRow();
         expandedQuickCommandsId = null;
         return;
     }
 
-    // Удаляем предыдущую панель (если была)
     removeQuickCommandsRow();
 
-    // Находим строку устройства, к которой будем добавлять панель
     const deviceRow = document.querySelector(`tr[data-device-id="${deviceId}"]`);
     if (!deviceRow) return;
 
-    // Создаём новую строку с кнопками
     const quickRow = document.createElement('tr');
     quickRow.className = 'quick-commands-row';
     quickRow.id = `quick-row-${deviceId}`;
 
     const td = document.createElement('td');
-    td.colSpan = 5; // объединяем все колонки
+    td.colSpan = 5;
 
     const container = document.createElement('div');
     container.className = 'quick-commands-container';
 
-    // Добавляем кнопки для каждой capability
     const capabilities = device.capabilities || [];
     if (capabilities.length === 0) {
         const span = document.createElement('span');
@@ -316,15 +327,11 @@ function toggleQuickCommandsRow(deviceId) {
     td.appendChild(container);
     quickRow.appendChild(td);
 
-    // Вставляем строку сразу после строки устройства
     deviceRow.insertAdjacentElement('afterend', quickRow);
 
     expandedQuickCommandsId = deviceId;
 }
 
-/**
- * Удаляет открытую строку быстрых команд, если она существует.
- */
 function removeQuickCommandsRow() {
     if (expandedQuickCommandsId) {
         const row = document.getElementById(`quick-row-${expandedQuickCommandsId}`);
@@ -367,6 +374,17 @@ function removeDevice(deviceId) {
     if (confirm(`Remove device ${deviceId} from authorized list?`)) {
         ws.send(JSON.stringify({ type: 'remove_device', device_id: deviceId }));
         addLogEntry('action', `Remove device ${deviceId}`);
+    }
+}
+
+function rotateToken() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        alert('Not connected');
+        return;
+    }
+    if (confirm('Generate a new authentication token? All online devices will receive the new token. Offline devices will need manual update.')) {
+        ws.send(JSON.stringify({ type: 'rotate_token' }));
+        addLogEntry('action', 'Token rotation requested');
     }
 }
 
@@ -436,19 +454,22 @@ window.onclick = (e) => {
     if (e.target === authModal) authModal.style.display = 'none';
 };
 
-// Обработчик кнопки запроса уведомлений
 const enableNotificationsBtn = document.getElementById('enable-notifications');
 if (enableNotificationsBtn) {
     enableNotificationsBtn.addEventListener('click', requestNotificationPermission);
 }
 
-// При загрузке проверяем текущее состояние разрешений и обновляем кнопку
+// Кнопка ротации токена
+const rotateTokenBtn = document.getElementById('rotate-token');
+if (rotateTokenBtn) {
+    rotateTokenBtn.addEventListener('click', rotateToken);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     if ('Notification' in window) {
         updateNotificationButtonState();
-        // Можно автоматически запросить разрешение при первом посещении
         if (Notification.permission === 'default') {
-            // requestNotificationPermission(); // раскомментировать для автоматического запроса
+            // Можно автоматически запросить при желании
         }
     } else {
         const btn = document.getElementById('enable-notifications');
@@ -456,5 +477,4 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Запуск WebSocket
 connectWebSocket();
