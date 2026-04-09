@@ -8,6 +8,9 @@ let pendingAuthRequest = null;
 // ID устройства, для которого в данный момент открыта панель быстрых команд
 let expandedQuickCommandsId = null;
 
+// Для отслеживания уже показанных уведомлений о pending-устройствах
+const notifiedPendingIds = new Set();
+
 const statusIndicator = document.getElementById('connection-status');
 const statusText = document.getElementById('status-text');
 const devicesTbody = document.querySelector('#devices-table tbody');
@@ -24,6 +27,77 @@ const confirmText = document.getElementById('confirm-text');
 const authText = document.getElementById('auth-text');
 
 let currentGroup = 'all';
+
+// Запрос разрешения на уведомления при загрузке
+function requestNotificationPermission() {
+    if (!('Notification' in window)) {
+        addLogEntry('warning', 'This browser does not support desktop notifications');
+        return;
+    }
+    if (Notification.permission === 'granted') {
+        addLogEntry('system', 'Notifications already enabled');
+        updateNotificationButtonState();
+    } else if (Notification.permission !== 'denied') {
+        Notification.requestPermission().then(permission => {
+            if (permission === 'granted') {
+                addLogEntry('system', 'Notification permission granted');
+                updateNotificationButtonState();
+            } else {
+                addLogEntry('warning', 'Notification permission denied');
+            }
+        });
+    }
+}
+
+function updateNotificationButtonState() {
+    const btn = document.getElementById('enable-notifications');
+    if (btn) {
+        if (Notification.permission === 'granted') {
+            btn.textContent = 'Notifications Enabled';
+            btn.disabled = true;
+            btn.style.opacity = '0.7';
+        } else {
+            btn.textContent = 'Enable Notifications';
+            btn.disabled = false;
+            btn.style.opacity = '1';
+        }
+    }
+}
+
+// Показ уведомления о новом pending-устройстве
+function showPendingNotification(deviceId, deviceType) {
+    if (Notification.permission !== 'granted') return;
+    if (notifiedPendingIds.has(deviceId)) return; // уже показывали
+
+    const title = 'New device pending authorization';
+    const options = {
+        body: `Device ${deviceId} (${deviceType}) is waiting for approval.`,
+        icon: '/static/favicon.ico', // можно заменить на свой значок
+        tag: `pending-${deviceId}`,
+        requireInteraction: true, // остаётся до взаимодействия пользователя
+    };
+    const notification = new Notification(title, options);
+    notification.onclick = () => {
+        window.focus();
+        // Попытка переключиться на вкладку pending
+        const pendingTab = document.querySelector('.tab[data-group="pending"]');
+        if (pendingTab) pendingTab.click();
+        notification.close();
+    };
+
+    notifiedPendingIds.add(deviceId);
+    addLogEntry('system', `Notification sent for pending device ${deviceId}`);
+}
+
+// Проверка устройств на наличие новых pending и показ уведомлений
+function checkAndNotifyPending() {
+    if (!devices) return;
+    Object.entries(devices).forEach(([id, device]) => {
+        if (device.status === 'pending' && !notifiedPendingIds.has(id)) {
+            showPendingNotification(id, device.type);
+        }
+    });
+}
 
 function connectWebSocket() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
@@ -69,6 +143,7 @@ function handleMessage(data) {
             devices = data.payload.devices;
             renderGroups();
             renderTable();
+            checkAndNotifyPending(); // проверяем и показываем уведомления
         }
     } else if (data.type === 'confirm_command') {
         const { device_id, command, params } = data.payload;
@@ -360,6 +435,26 @@ window.onclick = (e) => {
     if (e.target === confirmModal) confirmModal.style.display = 'none';
     if (e.target === authModal) authModal.style.display = 'none';
 };
+
+// Обработчик кнопки запроса уведомлений
+const enableNotificationsBtn = document.getElementById('enable-notifications');
+if (enableNotificationsBtn) {
+    enableNotificationsBtn.addEventListener('click', requestNotificationPermission);
+}
+
+// При загрузке проверяем текущее состояние разрешений и обновляем кнопку
+document.addEventListener('DOMContentLoaded', () => {
+    if ('Notification' in window) {
+        updateNotificationButtonState();
+        // Можно автоматически запросить разрешение при первом посещении
+        if (Notification.permission === 'default') {
+            // requestNotificationPermission(); // раскомментировать для автоматического запроса
+        }
+    } else {
+        const btn = document.getElementById('enable-notifications');
+        if (btn) btn.style.display = 'none';
+    }
+});
 
 // Запуск WebSocket
 connectWebSocket();

@@ -13,6 +13,7 @@
             <span style="color: var(--accent);">{{ session.get('username', 'User') }}</span>
             <a href="{{ url_for('logout') }}" style="color: var(--text-color); text-decoration: none;">Logout</a>
             {% endif %}
+            <button id="enable-notifications" class="secondary" style="margin-right: 10px;">Enable Notifications</button>
             <div id="connection-status" class="status-indicator disconnected">
                 <span class="dot"></span>
                 <span id="status-text">Disconnected</span>
