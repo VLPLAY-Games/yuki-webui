@@ -180,14 +180,13 @@ function handleMessage(data) {
         addLogEntry('system', 'Token rotated successfully');
         ws.send(JSON.stringify({ type: 'get_token_info' }));
     } else if (data.type === 'command_result') {
-        // Обработка результата выполнения команды
         const { id, device_id, payload } = data;
         const pending = pendingCommands.get(id);
         if (pending) {
             const success = payload.success;
             const error = payload.error;
-            // Обновляем запись в истории
             updateHistoryEntry(pending.historyId, device_id, pending.command, pending.params, success, error);
+            if (pending.callback) pending.callback(success, error);
             pendingCommands.delete(id);
         }
     }
@@ -479,11 +478,11 @@ function renderHistory() {
         const timeStr = entry.timestamp.toLocaleTimeString();
         let statusIndicator = '';
         if (entry.status === 'pending') {
-            statusIndicator = '<span class="history-status pending">⏳</span>';
+            statusIndicator = '<span class="history-status pending" style="color: #fdcb6e;">⏳ Pending</span>';
         } else if (entry.status === 'success') {
-            statusIndicator = '<span class="history-status success">✓</span>';
+            statusIndicator = '<span class="history-status success" style="color: #00b894;">✓ Success</span>';
         } else if (entry.status === 'error') {
-            statusIndicator = `<span class="history-status error" title="${entry.error || 'Error'}">✗</span>`;
+            statusIndicator = `<span class="history-status error" style="color: #d63031;" title="${entry.error || 'Error'}">✗ Failed</span>`;
         }
         return `<li>
             <span class="history-time">[${timeStr}]</span>
