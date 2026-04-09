@@ -4,7 +4,6 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'yuki-dev-secret-key-change-in-production')
 
-# Загрузка учётных данных
 WEBUI_USER = os.environ.get('WEBUI_USER')
 WEBUI_PASS = os.environ.get('WEBUI_PASS')
 
@@ -20,7 +19,6 @@ if not WEBUI_USER or not WEBUI_PASS:
 AUTH_ENABLED = bool(WEBUI_USER and WEBUI_PASS)
 
 def login_required(f):
-    """Декоратор для защиты маршрутов"""
     from functools import wraps
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -40,6 +38,7 @@ def login():
         password = request.form.get('password')
         if username == WEBUI_USER and password == WEBUI_PASS:
             session['logged_in'] = True
+            session['username'] = username
             flash('Login successful', 'success')
             return redirect(url_for('index'))
         else:

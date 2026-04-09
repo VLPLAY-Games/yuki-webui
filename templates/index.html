@@ -20,8 +20,6 @@
         </div>
     </div>
 
-    <div id="notification-area" style="margin-bottom: 20px;"></div>
-
     <div class="section">
         <h2>Devices</h2>
         <div class="tabs" id="group-tabs"></div>
@@ -47,6 +45,7 @@
         <button id="clear-logs">Clear</button>
     </div>
 
+    <!-- Модальное окно для JSON-команд -->
     <div id="command-modal" class="modal">
         <div class="modal-content">
             <span class="close">&times;</span>
@@ -61,6 +60,7 @@
         </div>
     </div>
 
+    <!-- Модальное окно подтверждения опасной команды -->
     <div id="confirm-modal" class="modal">
         <div class="modal-content">
             <h3>Confirm Dangerous Command</h3>
@@ -68,6 +68,36 @@
             <div style="display: flex; gap: 10px;">
                 <button id="confirm-yes" style="background-color: var(--error);">Yes, execute</button>
                 <button id="confirm-no" class="secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно авторизации нового устройства -->
+    <div id="auth-modal" class="modal">
+        <div class="modal-content auth-modal-content">
+            <div class="auth-header">
+                <h3>Device Authorization Request</h3>
+            </div>
+            <div class="auth-body">
+                <div class="auth-device-info">
+                    <div class="info-row">
+                        <span class="label">Device ID</span>
+                        <code id="auth-device-id" class="value"></code>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Type</span>
+                        <span id="auth-device-type" class="value"></span>
+                    </div>
+                </div>
+                <div class="auth-capabilities">
+                    <span class="label">Capabilities</span>
+                    <div id="auth-capabilities-list" class="capabilities-list"></div>
+                </div>
+                <p class="auth-question">Allow this device to connect?</p>
+            </div>
+            <div class="auth-actions">
+                <button id="auth-approve" class="primary">Approve</button>
+                <button id="auth-deny" class="secondary">Deny</button>
             </div>
         </div>
     </div>
