@@ -1660,3 +1660,181 @@ input:checked + .slider:before {
 .uptime-chart-container canvas {
     max-height: 180px;
 }
+
+/* ==================== ADMIN PANEL ==================== */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+}
+
+.metric-card {
+    background: var(--bg-tertiary);
+    border-radius: 16px;
+    padding: 15px;
+}
+
+.metric-icon {
+    font-size: 1.5rem;
+    color: var(--accent-primary);
+    margin-bottom: 10px;
+}
+
+.metric-info {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.metric-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.metric-value {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.metric-bar {
+    background: var(--bg-primary);
+    border-radius: 10px;
+    height: 6px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    background: var(--accent-primary);
+    height: 100%;
+    border-radius: 10px;
+    transition: width 0.3s ease;
+}
+
+/* Blacklist */
+.blacklist-add {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.blacklist-add input {
+    flex: 1;
+    padding: 10px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    color: var(--text-primary);
+}
+
+.blacklist-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: var(--bg-tertiary);
+    border-radius: 10px;
+    margin-bottom: 8px;
+}
+
+.blacklist-item code {
+    font-size: 0.85rem;
+}
+
+/* Audit Log */
+.audit-filters {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.audit-filters select,
+.audit-filters input {
+    padding: 8px 12px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+}
+
+.audit-item {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 12px;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.85rem;
+}
+
+.audit-time {
+    min-width: 100px;
+    color: var(--text-muted);
+    font-family: monospace;
+}
+
+.audit-event {
+    min-width: 140px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.audit-event.device_connected { background: rgba(16, 185, 129, 0.2); color: var(--success); }
+.audit-event.device_disconnected { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+.audit-event.device_authorized { background: rgba(99, 102, 241, 0.2); color: var(--accent-primary); }
+.audit-event.blacklist_add { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+.audit-event.command_sent { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
+
+.audit-device {
+    min-width: 150px;
+    font-family: monospace;
+}
+
+.audit-details {
+    flex: 1;
+    color: var(--text-secondary);
+}
+
+/* Command Stats */
+.stat-summary {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.stat-summary-card {
+    text-align: center;
+    padding: 15px;
+    background: var(--bg-tertiary);
+    border-radius: 12px;
+}
+
+.stat-summary-card h4 {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.stat-summary-card .value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--accent-primary);
+}
+
+.stats-period {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+/* Broadcast button */
+.broadcast-btn {
+    background: linear-gradient(135deg, var(--warning), #e67e22);
+}
+
+.broadcast-btn:hover {
+    background: linear-gradient(135deg, #e67e22, #d35400);
+}

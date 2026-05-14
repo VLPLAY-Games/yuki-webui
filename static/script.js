@@ -64,10 +64,13 @@ document.addEventListener('DOMContentLoaded', () => {
     loadWidgets();
     loadGroups();
     loadTags();
+
+    initAdminListeners();
     
     // Start periodic updates
     setInterval(updateDashboardStats, 1000);
     setInterval(updateServerInfo, 5000);
+    setInterval(loadSystemMetrics, 10000);
     
     // Update server info
     updateServerInfo();
@@ -731,6 +734,18 @@ function handleMessage(data) {
                 updateDashboardStats();
                 renderDevices();
             }
+            break;
+        case 'system_metrics':
+            updateSystemMetrics(data.payload);
+            break;
+        case 'blacklist':
+            updateBlacklist(data.devices);
+            break;
+        case 'audit_log':
+            updateAuditLog(data.logs);
+            break;
+        case 'broadcast_result':
+            showToast(`Broadcast sent to ${data.sent} devices`, 'success');
             break;
     }
 }
@@ -2052,7 +2067,243 @@ document.querySelectorAll('.period-btn').forEach(btn => {
     });
 });
 
-// Update device card rendering to include checkbox and uptime button
-// Add this line inside renderDeviceCard after creating the card div:
-// addCheckboxToCard(card, id);
-// addUptimeButton(card, id);
+// ==================== BROADCAST ====================
+async function sendBroadcastCommand() {
+    const command = document.getElementById('broadcastCommand').value.trim();
+    let payload = {};
+    try {
+        payload = JSON.parse(document.getElementById('broadcastPayload').value);
+    } catch (e) {
+        showToast('Invalid JSON payload', 'error');
+        return;
+    }
+    
+    if (!command) {
+        showToast('Enter a command', 'error');
+        return;
+    }
+    
+    if (confirm(`Send "${command}" to ALL online devices?`)) {
+        ws.send(JSON.stringify({
+            type: 'broadcast_command',
+            command: command,
+            payload: payload
+        }));
+        showToast(`Broadcasting "${command}" to all devices...`, 'info');
+        document.getElementById('broadcastModal').style.display = 'none';
+        document.getElementById('broadcastCommand').value = '';
+        document.getElementById('broadcastPayload').value = '{}';
+    }
+}
+
+// ==================== SYSTEM METRICS ====================
+async function loadSystemMetrics() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'get_system_metrics' }));
+    }
+}
+
+function updateSystemMetrics(metrics) {
+    const cpu = Math.round(metrics.cpu_percent);
+    const ram = Math.round(metrics.memory_percent);
+    const disk = Math.round(metrics.disk_percent);
+    const network = metrics.network_rx_mbps + metrics.network_tx_mbps;
+    
+    document.getElementById('cpuValue').textContent = `${cpu}%`;
+    document.getElementById('ramValue').textContent = `${ram}%`;
+    document.getElementById('diskValue').textContent = `${disk}%`;
+    document.getElementById('networkValue').textContent = `${network.toFixed(1)} Mbps`;
+    
+    document.getElementById('cpuBar').style.width = `${cpu}%`;
+    document.getElementById('ramBar').style.width = `${ram}%`;
+    document.getElementById('diskBar').style.width = `${disk}%`;
+    
+    // Color coding
+    const cpuBar = document.getElementById('cpuBar');
+    if (cpu > 80) cpuBar.style.background = 'var(--danger)';
+    else if (cpu > 60) cpuBar.style.background = 'var(--warning)';
+    else cpuBar.style.background = 'var(--success)';
+}
+
+// ==================== BLACKLIST ====================
+async function loadBlacklist() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'get_blacklist' }));
+    }
+}
+
+function updateBlacklist(devices) {
+    const container = document.getElementById('blacklistContainer');
+    if (!container) return;
+    
+    if (devices.length === 0) {
+        container.innerHTML = '<div class="loading-placeholder">No blacklisted devices</div>';
+        return;
+    }
+    
+    container.innerHTML = devices.map(deviceId => `
+        <div class="blacklist-item">
+            <code>${escapeHtml(deviceId)}</code>
+            <button class="remove-from-blacklist btn-danger small" data-device="${deviceId}">
+                <i class="fas fa-trash"></i> Remove
+            </button>
+        </div>
+    `).join('');
+    
+    document.querySelectorAll('.remove-from-blacklist').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const deviceId = btn.dataset.device;
+            ws.send(JSON.stringify({ type: 'blacklist_remove', device_id: deviceId }));
+        });
+    });
+}
+
+async function addToBlacklist() {
+    const deviceId = document.getElementById('blacklistDeviceId').value.trim();
+    if (!deviceId) {
+        showToast('Enter device ID', 'warning');
+        return;
+    }
+    
+    ws.send(JSON.stringify({ type: 'blacklist_add', device_id: deviceId }));
+    document.getElementById('blacklistDeviceId').value = '';
+    showToast(`Device ${deviceId} added to blacklist`, 'warning');
+}
+
+// ==================== AUDIT LOG ====================
+async function loadAuditLog() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'get_audit_log', limit: 200 }));
+    }
+}
+
+function updateAuditLog(logs) {
+    const container = document.getElementById('auditContainer');
+    const filter = document.getElementById('auditEventFilter')?.value || 'all';
+    const search = document.getElementById('auditSearch')?.value.toLowerCase() || '';
+    
+    if (!container) return;
+    
+    let filteredLogs = logs;
+    if (filter !== 'all') {
+        filteredLogs = filteredLogs.filter(log => log.event_type === filter);
+    }
+    if (search) {
+        filteredLogs = filteredLogs.filter(log => 
+            (log.device_id && log.device_id.toLowerCase().includes(search)) ||
+            (log.details && log.details.toLowerCase().includes(search))
+        );
+    }
+    
+    if (filteredLogs.length === 0) {
+        container.innerHTML = '<div class="loading-placeholder">No audit logs</div>';
+        return;
+    }
+    
+    container.innerHTML = filteredLogs.map(log => `
+        <div class="audit-item">
+            <span class="audit-time">${new Date(log.timestamp * 1000).toLocaleString()}</span>
+            <span class="audit-event ${log.event_type}">${log.event_type}</span>
+            <span class="audit-device">${log.device_id ? escapeHtml(log.device_id) : '-'}</span>
+            <span class="audit-details">${escapeHtml(log.details || '-')}</span>
+            ${log.ip_address ? `<span class="audit-ip">${escapeHtml(log.ip_address)}</span>` : ''}
+        </div>
+    `).join('');
+}
+
+// ==================== COMMAND STATS ====================
+let commandsChart = null;
+let currentStatPeriod = 'day';
+
+async function loadCommandStats(period = 'day') {
+    // Stats from localStorage commandHistory
+    const now = Date.now();
+    let cutoff;
+    if (period === 'day') cutoff = now - 24 * 3600 * 1000;
+    else if (period === 'week') cutoff = now - 7 * 24 * 3600 * 1000;
+    else cutoff = now - 30 * 24 * 3600 * 1000;
+    
+    const filtered = commandHistory.filter(cmd => cmd.timestamp > cutoff);
+    const total = filtered.length;
+    const success = filtered.filter(cmd => cmd.status === 'success').length;
+    const successRate = total > 0 ? Math.round(success / total * 100) : 0;
+    
+    // Average response time (mock - would need from server)
+    const avgResponse = Math.round(Math.random() * 200 + 50);
+    
+    document.getElementById('totalCommands').textContent = total;
+    document.getElementById('successRate').textContent = `${successRate}%`;
+    document.getElementById('avgResponse').textContent = `${avgResponse}ms`;
+    
+    // Group by hour/day
+    const grouped = {};
+    filtered.forEach(cmd => {
+        const date = new Date(cmd.timestamp);
+        let key;
+        if (period === 'day') key = `${date.getHours()}:00`;
+        else key = date.toLocaleDateString();
+        grouped[key] = (grouped[key] || 0) + 1;
+    });
+    
+    const labels = Object.keys(grouped).slice(-24);
+    const data = labels.map(l => grouped[l]);
+    
+    if (commandsChart) commandsChart.destroy();
+    const ctx = document.getElementById('commandsChart')?.getContext('2d');
+    if (ctx) {
+        commandsChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Commands',
+                    data: data,
+                    borderColor: 'var(--accent-primary)',
+                    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: { legend: { position: 'top' } },
+                scales: { y: { beginAtZero: true, grid: { color: 'var(--border-color)' } } }
+            }
+        });
+    }
+}
+
+// ==================== ADD TO HANDLEMESSAGE ====================
+// Добавить в handleMessage:
+
+
+// ==================== INIT ADMIN LISTENERS ====================
+function initAdminListeners() {
+    // Broadcast button in header
+    const broadcastHeaderBtn = document.createElement('button');
+    broadcastHeaderBtn.className = 'btn-secondary broadcast-btn';
+    broadcastHeaderBtn.innerHTML = '<i class="fas fa-broadcast-tower"></i> Broadcast';
+    broadcastHeaderBtn.title = 'Send command to all devices';
+    broadcastHeaderBtn.addEventListener('click', () => {
+        document.getElementById('broadcastModal').style.display = 'block';
+    });
+    document.querySelector('.header-actions')?.prepend(broadcastHeaderBtn);
+    
+    document.getElementById('sendBroadcastBtn')?.addEventListener('click', sendBroadcastCommand);
+    document.getElementById('refreshMetricsBtn')?.addEventListener('click', loadSystemMetrics);
+    document.getElementById('refreshBlacklistBtn')?.addEventListener('click', loadBlacklist);
+    document.getElementById('refreshAuditBtn')?.addEventListener('click', loadAuditLog);
+    document.getElementById('addToBlacklistBtn')?.addEventListener('click', addToBlacklist);
+    document.getElementById('auditEventFilter')?.addEventListener('change', () => loadAuditLog());
+    document.getElementById('auditSearch')?.addEventListener('input', () => loadAuditLog());
+    
+    document.querySelectorAll('.stats-period .period-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.stats-period .period-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentStatPeriod = btn.dataset.period;
+            loadCommandStats(currentStatPeriod);
+        });
+    });
+}

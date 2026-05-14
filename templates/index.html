@@ -46,6 +46,10 @@
                         <i class="fas fa-cog"></i>
                         <span>Settings</span>
                     </li>
+                    <li class="nav-item" data-view="admin">
+                        <i class="fas fa-shield-alt"></i>
+                        <span>Admin</span>
+                    </li>
                 </ul>
             </nav>
             
@@ -550,6 +554,164 @@
                                 <p>Time Zone: <span id="timezoneInfo"></span></p>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Admin View -->
+            <div id="adminView" class="view">
+                <div class="section-header">
+                    <h2><i class="fas fa-shield-alt"></i> Administration</h2>
+                </div>
+                
+                <!-- System Metrics -->
+                <div class="settings-card">
+                    <div class="settings-card-header">
+                        <i class="fas fa-chart-line"></i>
+                        <h3>System Metrics</h3>
+                        <button id="refreshMetricsBtn" class="btn-icon"><i class="fas fa-sync-alt"></i></button>
+                    </div>
+                    <div class="settings-card-body">
+                        <div class="metrics-grid" id="systemMetrics">
+                            <div class="metric-card">
+                                <div class="metric-icon"><i class="fas fa-microchip"></i></div>
+                                <div class="metric-info">
+                                    <span class="metric-label">CPU</span>
+                                    <span class="metric-value" id="cpuValue">--%</span>
+                                </div>
+                                <div class="metric-bar"><div class="progress-bar" id="cpuBar" style="width: 0%"></div></div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-icon"><i class="fas fa-memory"></i></div>
+                                <div class="metric-info">
+                                    <span class="metric-label">RAM</span>
+                                    <span class="metric-value" id="ramValue">--%</span>
+                                </div>
+                                <div class="metric-bar"><div class="progress-bar" id="ramBar" style="width: 0%"></div></div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-icon"><i class="fas fa-hdd"></i></div>
+                                <div class="metric-info">
+                                    <span class="metric-label">Disk</span>
+                                    <span class="metric-value" id="diskValue">--%</span>
+                                </div>
+                                <div class="metric-bar"><div class="progress-bar" id="diskBar" style="width: 0%"></div></div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-icon"><i class="fas fa-network-wired"></i></div>
+                                <div class="metric-info">
+                                    <span class="metric-label">Network</span>
+                                    <span class="metric-value" id="networkValue">-- Mbps</span>
+                                </div>
+                                <div class="metric-bar"><div class="progress-bar" id="networkBar" style="width: 0%"></div></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Blacklist -->
+                <div class="settings-card">
+                    <div class="settings-card-header">
+                        <i class="fas fa-ban"></i>
+                        <h3>Blacklist</h3>
+                        <button id="refreshBlacklistBtn" class="btn-icon"><i class="fas fa-sync-alt"></i></button>
+                    </div>
+                    <div class="settings-card-body">
+                        <div class="blacklist-add">
+                            <input type="text" id="blacklistDeviceId" placeholder="Device ID to block">
+                            <button id="addToBlacklistBtn" class="btn-danger">Add to Blacklist</button>
+                        </div>
+                        <div class="blacklist-list" id="blacklistContainer">
+                            <div class="loading-placeholder">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Audit Log -->
+                <div class="settings-card">
+                    <div class="settings-card-header">
+                        <i class="fas fa-history"></i>
+                        <h3>Audit Log</h3>
+                        <button id="refreshAuditBtn" class="btn-icon"><i class="fas fa-sync-alt"></i></button>
+                    </div>
+                    <div class="settings-card-body">
+                        <div class="audit-filters">
+                            <select id="auditEventFilter">
+                                <option value="all">All events</option>
+                                <option value="device_connected">Device Connected</option>
+                                <option value="device_disconnected">Device Disconnected</option>
+                                <option value="device_authorized">Device Authorized</option>
+                                <option value="device_rejected">Device Rejected</option>
+                                <option value="blacklist_add">Blacklist Add</option>
+                                <option value="blacklist_remove">Blacklist Remove</option>
+                                <option value="command_sent">Command Sent</option>
+                                <option value="broadcast_command">Broadcast Command</option>
+                                <option value="auth_failed">Auth Failed</option>
+                            </select>
+                            <input type="text" id="auditSearch" placeholder="Search...">
+                        </div>
+                        <div class="audit-list" id="auditContainer">
+                            <div class="loading-placeholder">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Command Stats -->
+                <div class="settings-card">
+                    <div class="settings-card-header">
+                        <i class="fas fa-chart-bar"></i>
+                        <h3>Command Statistics</h3>
+                    </div>
+                    <div class="settings-card-body">
+                        <div class="stats-period">
+                            <button class="period-btn active" data-period="day">Last 24h</button>
+                            <button class="period-btn" data-period="week">Last 7 days</button>
+                            <button class="period-btn" data-period="month">Last 30 days</button>
+                        </div>
+                        <div class="command-stats" id="commandStats">
+                            <div class="stat-summary">
+                                <div class="stat-summary-card">
+                                    <h4>Total Commands</h4>
+                                    <div class="value" id="totalCommands">0</div>
+                                </div>
+                                <div class="stat-summary-card">
+                                    <h4>Success Rate</h4>
+                                    <div class="value" id="successRate">0%</div>
+                                </div>
+                                <div class="stat-summary-card">
+                                    <h4>Avg Response</h4>
+                                    <div class="value" id="avgResponse">0ms</div>
+                                </div>
+                            </div>
+                            <canvas id="commandsChart" height="200"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Broadcast Modal -->
+            <div id="broadcastModal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3><i class="fas fa-broadcast-tower"></i> Broadcast Command</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Send command to <strong>ALL online devices</strong></p>
+                        <div class="warning-note" style="background: rgba(239,68,68,0.1); padding:10px; border-radius:8px; margin-bottom:15px;">
+                            <i class="fas fa-exclamation-triangle"></i> This will send the command to every connected device!
+                        </div>
+                        <div class="form-group">
+                            <label>Command</label>
+                            <input type="text" id="broadcastCommand" placeholder="e.g., reboot, update">
+                        </div>
+                        <div class="form-group">
+                            <label>Payload (JSON)</label>
+                            <textarea id="broadcastPayload" rows="3" placeholder="{}"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="sendBroadcastBtn" class="btn-primary">Broadcast</button>
+                        <button class="btn-secondary modal-cancel">Cancel</button>
                     </div>
                 </div>
             </div>
