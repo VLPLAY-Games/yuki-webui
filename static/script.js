@@ -60,6 +60,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Load saved history from localStorage
     loadStoredData();
+
+    loadWidgets();
+    loadGroups();
+    loadTags();
     
     // Start periodic updates
     setInterval(updateDashboardStats, 1000);
@@ -659,6 +663,7 @@ function handleMessage(data) {
                 devices = data.payload.devices;
                 updateDashboardStats();
                 renderDevices();
+                updateAllWidgets();
                 checkAndNotifyPending();
                 
                 // Check for device status changes
@@ -717,6 +722,7 @@ function handleMessage(data) {
             
         case 'command_result':
             handleCommandResult(data);
+            updateRecentCommandsWidget();
             break;
             
         case 'status':
@@ -760,19 +766,19 @@ function handleCommandResult(data) {
 
 function updateTokenInfo(payload) {
     const infoDiv = document.getElementById('tokenInfo');
-    if (!infoDiv) return;
+    if (infoDiv) {
+        const created = payload.created_at ? new Date(payload.created_at * 1000).toLocaleString() : 'N/A';
+        const expiresIn = payload.expires_in ? formatTime(payload.expires_in) : 'Never';
+        infoDiv.innerHTML = `<strong>Created:</strong> ${created}<br><strong>Expires:</strong> ${expiresIn}`;
+    }
     
-    const created = payload.created_at ? new Date(payload.created_at * 1000).toLocaleString() : 'N/A';
-    const expiresIn = payload.expires_in ? formatTime(payload.expires_in) : 'Never';
-    infoDiv.innerHTML = `<strong>Created:</strong> ${created}<br><strong>Expires:</strong> ${expiresIn}`;
-}
-
-function formatTime(seconds) {
-    if (seconds <= 0) return 'Expired';
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    return `${h}h ${m}m ${s}s`;
+    // Also update widget token info
+    const widgetTokenInfo = document.getElementById('widgetTokenInfo');
+    if (widgetTokenInfo) {
+        const created = payload.created_at ? new Date(payload.created_at * 1000).toLocaleString() : 'N/A';
+        const expiresIn = payload.expires_in ? formatTime(payload.expires_in) : 'Never';
+        widgetTokenInfo.innerHTML = `<strong>Created:</strong> ${created}<br><strong>Expires:</strong> ${expiresIn}`;
+    }
 }
 
 // ==================== DASHBOARD STATS ====================
@@ -1342,3 +1348,711 @@ function escapeHtml(str) {
         return m;
     });
 }
+
+// ==================== WIDGETS SYSTEM ====================
+let widgets = [];
+let draggedWidget = null;
+
+async function loadWidgets() {
+    try {
+        const response = await fetch('/api/widgets');
+        widgets = await response.json();
+        renderWidgets();
+    } catch (e) {
+        console.error('Failed to load widgets', e);
+    }
+}
+
+function renderWidgets() {
+    const container = document.getElementById('widgetGrid');
+    if (!container) return;
+    
+    if (widgets.length === 0) {
+        widgets = [
+            { id: 'stats', type: 'stats', x: 0, y: 0, w: 2, h: 1 },
+            { id: 'token', type: 'token', x: 0, y: 1, w: 2, h: 1 },
+            { id: 'recent', type: 'recent_commands', x: 0, y: 2, w: 2, h: 2 }
+        ];
+    }
+    
+    container.innerHTML = widgets.map(widget => renderWidget(widget)).join('');
+    
+    // Add drag and drop
+    document.querySelectorAll('.dashboard-widget').forEach(el => {
+        el.setAttribute('draggable', 'true');
+        el.addEventListener('dragstart', handleDragStart);
+        el.addEventListener('dragend', handleDragEnd);
+        el.addEventListener('dragover', handleDragOver);
+        el.addEventListener('drop', handleDrop);
+    });
+    
+    // Load widget content
+    widgets.forEach(widget => {
+        loadWidgetContent(widget);
+    });
+}
+
+function renderWidget(widget) {
+    const icons = {
+        stats: 'fa-chart-pie',
+        token: 'fa-key',
+        recent_commands: 'fa-history'
+    };
+    
+    return `
+        <div class="dashboard-widget" data-widget-id="${widget.id}" style="grid-column: span ${widget.w};">
+            <div class="widget-header">
+                <h3><i class="fas ${icons[widget.type]}"></i> ${getWidgetTitle(widget.type)}</h3>
+                <div class="widget-controls">
+                    <button class="refresh-widget" data-id="${widget.id}"><i class="fas fa-sync-alt"></i></button>
+                    <button class="remove-widget" data-id="${widget.id}"><i class="fas fa-times"></i></button>
+                </div>
+            </div>
+            <div class="widget-content" id="widget-${widget.id}">
+                <div class="loading-placeholder">Loading...</div>
+            </div>
+        </div>
+    `;
+}
+
+function getWidgetTitle(type) {
+    const titles = {
+        stats: 'Statistics',
+        token: 'Token Info',
+        recent_commands: 'Recent Commands'
+    };
+    return titles[type] || type;
+}
+
+function loadWidgetContent(widget) {
+    const container = document.getElementById(`widget-${widget.id}`);
+    if (!container) return;
+    
+    switch (widget.type) {
+        case 'stats':
+            container.innerHTML = `
+                <div class="stats-mini">
+                    <div class="stat-mini"><h4 id="widgetTotal">0</h4><span>Total</span></div>
+                    <div class="stat-mini"><h4 id="widgetOnline">0</h4><span>Online</span></div>
+                    <div class="stat-mini"><h4 id="widgetPending">0</h4><span>Pending</span></div>
+                </div>
+            `;
+            updateMiniStats();
+            break;
+        case 'token':
+            // Try to get current token info from existing element
+            const tokenInfoDiv = document.getElementById('tokenInfo');
+            const tokenHtml = tokenInfoDiv ? tokenInfoDiv.innerHTML : 'Loading...';
+            container.innerHTML = `<div id="widgetTokenInfo">${tokenHtml}</div>`;
+            break;
+        case 'recent_commands':
+            container.innerHTML = `<div id="widgetRecentCommands" class="recent-commands-list"></div>`;
+            updateRecentCommandsWidget();
+            break;
+    }
+}
+
+function updateAllWidgets() {
+    updateMiniStats();
+    updateRecentCommandsWidget();
+    // Update token widget from main token info
+    const tokenInfoDiv = document.getElementById('tokenInfo');
+    const widgetTokenInfo = document.getElementById('widgetTokenInfo');
+    if (widgetTokenInfo && tokenInfoDiv) {
+        widgetTokenInfo.innerHTML = tokenInfoDiv.innerHTML;
+    }
+}
+
+function updateMiniStats() {
+    const total = Object.keys(devices).length;
+    const online = Object.values(devices).filter(d => d.status === 'online').length;
+    const pending = Object.values(devices).filter(d => d.status === 'pending').length;
+    
+    const widgetTotal = document.getElementById('widgetTotal');
+    if (widgetTotal) widgetTotal.textContent = total;
+    const widgetOnline = document.getElementById('widgetOnline');
+    if (widgetOnline) widgetOnline.textContent = online;
+    const widgetPending = document.getElementById('widgetPending');
+    if (widgetPending) widgetPending.textContent = pending;
+}
+
+function updateRecentCommandsWidget() {
+    const container = document.getElementById('widgetRecentCommands');
+    if (!container) return;
+    
+    if (commandHistory.length === 0) {
+        container.innerHTML = '<div class="loading-placeholder">No commands</div>';
+        return;
+    }
+    
+    const recent = commandHistory.slice(0, 5);
+    container.innerHTML = recent.map(cmd => `
+        <div class="history-item" style="padding: 8px; font-size:0.75rem;">
+            <span class="history-time">${new Date(cmd.timestamp).toLocaleTimeString()}</span>
+            <span class="history-status ${cmd.status}">${cmd.status === 'pending' ? 'pending' : (cmd.status === 'success' ? 'success' : 'error')}</span>
+            <span class="history-device" style="min-width: 100px;">${escapeHtml(cmd.deviceId)}</span>
+            <span class="history-command">${escapeHtml(cmd.command)}</span>
+        </div>
+    `).join('');
+}
+
+function handleDragStart(e) {
+    draggedWidget = e.target.closest('.dashboard-widget');
+    e.dataTransfer.setData('text/plain', draggedWidget.dataset.widgetId);
+    draggedWidget.classList.add('dragging');
+}
+
+function handleDragEnd(e) {
+    if (draggedWidget) draggedWidget.classList.remove('dragging');
+    draggedWidget = null;
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+}
+
+async function handleDrop(e) {
+    e.preventDefault();
+    const targetWidget = e.target.closest('.dashboard-widget');
+    if (!targetWidget || targetWidget === draggedWidget) return;
+    
+    const fromId = draggedWidget.dataset.widgetId;
+    const toId = targetWidget.dataset.widgetId;
+    
+    const fromIndex = widgets.findIndex(w => w.id === fromId);
+    const toIndex = widgets.findIndex(w => w.id === toId);
+    
+    if (fromIndex !== -1 && toIndex !== -1) {
+        const temp = { ...widgets[fromIndex] };
+        widgets[fromIndex] = { ...widgets[toIndex] };
+        widgets[toIndex] = temp;
+        
+        await fetch('/api/widgets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(widgets)
+        });
+        
+        renderWidgets();
+    }
+}
+
+// ==================== GROUPS SYSTEM ====================
+let groups = {};
+let groupsSidebarOpen = false;
+
+async function loadGroups() {
+    try {
+        const response = await fetch('/api/groups');
+        groups = await response.json();
+        renderGroupsList();
+    } catch (e) {
+        console.error('Failed to load groups', e);
+    }
+}
+
+function renderGroupsList() {
+    const container = document.getElementById('groupsList');
+    if (!container) return;
+    
+    if (Object.keys(groups).length === 0) {
+        container.innerHTML = '<div class="loading-placeholder">No groups created</div>';
+        return;
+    }
+    
+    container.innerHTML = Object.entries(groups).map(([id, group]) => `
+        <div class="group-item" data-group-id="${id}">
+            <div class="group-header" onclick="toggleGroup('${id}')">
+                <span class="group-name">
+                    <i class="fas fa-folder"></i>
+                    ${escapeHtml(group.name)}
+                    <span class="group-badge">${group.devices.length}</span>
+                </span>
+                <button class="delete-group" data-id="${id}" onclick="event.stopPropagation(); deleteGroup('${id}')">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+            <div class="group-devices">
+                ${group.devices.map(deviceId => {
+                    const device = devices[deviceId];
+                    return `
+                        <div class="group-device-item">
+                            <span>${escapeHtml(deviceId)}</span>
+                            <span class="status-badge ${device?.status || 'offline'}">${device?.status || 'unknown'}</span>
+                            <button class="remove-from-group" data-group="${id}" data-device="${deviceId}">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    `;
+                }).join('')}
+                <div class="add-device-to-group">
+                    <select class="add-device-select" data-group="${id}">
+                        <option value="">-- Add device --</option>
+                        ${Object.keys(devices).filter(d => !group.devices.includes(d)).map(d => 
+                            `<option value="${d}">${escapeHtml(d)}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+            </div>
+        </div>
+    `).join('');
+    
+    // Attach event listeners
+    document.querySelectorAll('.remove-from-group').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const groupId = btn.dataset.group;
+            const deviceId = btn.dataset.device;
+            removeDeviceFromGroup(groupId, deviceId);
+        });
+    });
+    
+    document.querySelectorAll('.add-device-select').forEach(select => {
+        select.addEventListener('change', (e) => {
+            const groupId = select.dataset.group;
+            const deviceId = select.value;
+            if (deviceId) {
+                addDeviceToGroup(groupId, deviceId);
+                select.value = '';
+            }
+        });
+    });
+}
+
+function toggleGroup(groupId) {
+    const groupEl = document.querySelector(`.group-item[data-group-id="${groupId}"]`);
+    if (groupEl) groupEl.classList.toggle('expanded');
+}
+
+async function createGroup(name) {
+    try {
+        const response = await fetch('/api/groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+        });
+        if (response.ok) {
+            await loadGroups();
+            showToast(`Group "${name}" created`, 'success');
+        }
+    } catch (e) {
+        showToast('Failed to create group', 'error');
+    }
+}
+
+async function deleteGroup(groupId) {
+    if (!confirm('Delete this group? Devices will not be affected.')) return;
+    
+    try {
+        await fetch('/api/groups', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: groupId })
+        });
+        await loadGroups();
+        showToast('Group deleted', 'success');
+    } catch (e) {
+        showToast('Failed to delete group', 'error');
+    }
+}
+
+async function addDeviceToGroup(groupId, deviceId) {
+    try {
+        await fetch(`/api/groups/${groupId}/devices`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: deviceId })
+        });
+        await loadGroups();
+        showToast(`Device added to group`, 'success');
+    } catch (e) {
+        showToast('Failed to add device', 'error');
+    }
+}
+
+async function removeDeviceFromGroup(groupId, deviceId) {
+    try {
+        await fetch(`/api/groups/${groupId}/devices`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: deviceId })
+        });
+        await loadGroups();
+        showToast(`Device removed from group`, 'success');
+    } catch (e) {
+        showToast('Failed to remove device', 'error');
+    }
+}
+
+// ==================== TAGS SYSTEM ====================
+let tags = {};
+
+async function loadTags() {
+    try {
+        const response = await fetch('/api/tags');
+        tags = await response.json();
+        renderDeviceTags();
+    } catch (e) {
+        console.error('Failed to load tags', e);
+    }
+}
+
+function renderDeviceTags() {
+    document.querySelectorAll('.device-card').forEach(card => {
+        const deviceId = card.dataset.deviceId;
+        const deviceTags = tags[deviceId] || [];
+        
+        let tagsContainer = card.querySelector('.device-tags');
+        if (!tagsContainer) {
+            tagsContainer = document.createElement('div');
+            tagsContainer.className = 'device-tags';
+            card.querySelector('.device-type')?.after(tagsContainer);
+        }
+        
+        tagsContainer.innerHTML = `
+            <div class="tags-container">
+                ${deviceTags.map(tag => `
+                    <span class="tag">
+                        ${escapeHtml(tag)}
+                        <button class="tag-remove" data-device="${deviceId}" data-tag="${tag}">&times;</button>
+                    </span>
+                `).join('')}
+                <div class="add-tag-input">
+                    <input type="text" placeholder="Add tag..." class="tag-input" data-device="${deviceId}">
+                    <button class="add-tag-btn" data-device="${deviceId}">+</button>
+                </div>
+            </div>
+        `;
+    });
+    
+    // Attach tag event listeners
+    document.querySelectorAll('.tag-remove').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const deviceId = btn.dataset.device;
+            const tag = btn.dataset.tag;
+            removeTag(deviceId, tag);
+        });
+    });
+    
+    document.querySelectorAll('.add-tag-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const deviceId = btn.dataset.device;
+            const input = btn.parentElement.querySelector('.tag-input');
+            const tag = input.value.trim();
+            if (tag) {
+                addTag(deviceId, tag);
+                input.value = '';
+            }
+        });
+    });
+    
+    document.querySelectorAll('.tag-input').forEach(input => {
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.stopPropagation();
+                const deviceId = input.dataset.device;
+                const tag = input.value.trim();
+                if (tag) {
+                    addTag(deviceId, tag);
+                    input.value = '';
+                }
+            }
+        });
+    });
+}
+
+async function addTag(deviceId, tag) {
+    const currentTags = tags[deviceId] || [];
+    if (currentTags.includes(tag)) return;
+    
+    const newTags = [...currentTags, tag];
+    try {
+        await fetch('/api/tags', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: deviceId, tags: newTags })
+        });
+        tags[deviceId] = newTags;
+        renderDeviceTags();
+        showToast(`Tag "${tag}" added`, 'success');
+    } catch (e) {
+        showToast('Failed to add tag', 'error');
+    }
+}
+
+async function removeTag(deviceId, tag) {
+    const currentTags = tags[deviceId] || [];
+    const newTags = currentTags.filter(t => t !== tag);
+    try {
+        await fetch('/api/tags', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: deviceId, tags: newTags })
+        });
+        tags[deviceId] = newTags;
+        renderDeviceTags();
+        showToast(`Tag "${tag}" removed`, 'success');
+    } catch (e) {
+        showToast('Failed to remove tag', 'error');
+    }
+}
+
+// ==================== MASS SELECTION ====================
+let selectedDevices = new Set();
+
+function toggleDeviceSelection(deviceId, event) {
+    if (event) event.stopPropagation();
+    
+    if (selectedDevices.has(deviceId)) {
+        selectedDevices.delete(deviceId);
+    } else {
+        selectedDevices.add(deviceId);
+    }
+    
+    updateMassSelectionUI();
+}
+
+function updateMassSelectionUI() {
+    const massBar = document.getElementById('massSelectBar');
+    const selectedCount = document.getElementById('selectedCount');
+    
+    if (selectedDevices.size > 0) {
+        massBar.classList.add('active');
+        selectedCount.textContent = selectedDevices.size;
+    } else {
+        massBar.classList.remove('active');
+    }
+    
+    // Highlight selected cards
+    document.querySelectorAll('.device-card').forEach(card => {
+        const deviceId = card.dataset.deviceId;
+        if (selectedDevices.has(deviceId)) {
+            card.classList.add('selected');
+        } else {
+            card.classList.remove('selected');
+        }
+    });
+}
+
+function clearSelection() {
+    selectedDevices.clear();
+    updateMassSelectionUI();
+}
+
+async function sendMassCommand() {
+    if (selectedDevices.size === 0) return;
+    
+    document.getElementById('massDeviceCount').textContent = selectedDevices.size;
+    document.getElementById('massCommandModal').style.display = 'block';
+}
+
+async function executeMassCommand() {
+    const command = document.getElementById('massCommand').value.trim();
+    let payload = {};
+    try {
+        payload = JSON.parse(document.getElementById('massPayload').value);
+    } catch (e) {
+        showToast('Invalid JSON payload', 'error');
+        return;
+    }
+    
+    if (!command) {
+        showToast('Enter a command', 'error');
+        return;
+    }
+    
+    let successCount = 0;
+    for (const deviceId of selectedDevices) {
+        const device = devices[deviceId];
+        if (device && device.status === 'online') {
+            sendCommand(deviceId, command, payload);
+            successCount++;
+            await new Promise(r => setTimeout(r, 100)); // small delay
+        }
+    }
+    
+    showToast(`Command sent to ${successCount} devices`, 'success');
+    document.getElementById('massCommandModal').style.display = 'none';
+    clearSelection();
+}
+
+async function addSelectedToGroup() {
+    if (selectedDevices.size === 0) return;
+    
+    const select = document.getElementById('groupSelect');
+    select.innerHTML = '<option value="">-- Select Group --</option>' + 
+        Object.entries(groups).map(([id, group]) => 
+            `<option value="${id}">${escapeHtml(group.name)}</option>`
+        ).join('');
+    
+    document.getElementById('groupDevicesList').textContent = `${selectedDevices.size} devices`;
+    document.getElementById('addToGroupModal').style.display = 'block';
+}
+
+async function confirmAddToGroup() {
+    const groupId = document.getElementById('groupSelect').value;
+    if (!groupId) {
+        showToast('Select a group', 'warning');
+        return;
+    }
+    
+    for (const deviceId of selectedDevices) {
+        await addDeviceToGroup(groupId, deviceId);
+    }
+    
+    showToast(`Added ${selectedDevices.size} devices to group`, 'success');
+    document.getElementById('addToGroupModal').style.display = 'none';
+    clearSelection();
+}
+
+async function massDisconnect() {
+    if (selectedDevices.size === 0) return;
+    
+    if (confirm(`Disconnect ${selectedDevices.size} devices?`)) {
+        for (const deviceId of selectedDevices) {
+            disconnectDevice(deviceId);
+            await new Promise(r => setTimeout(r, 100));
+        }
+        showToast(`Disconnected ${selectedDevices.size} devices`, 'warning');
+        clearSelection();
+    }
+}
+
+// ==================== UPTIME REPORTS ====================
+let currentUptimeDevice = null;
+let uptimeChart = null;
+
+async function showUptimeReport(deviceId) {
+    currentUptimeDevice = deviceId;
+    document.getElementById('uptimeModal').style.display = 'block';
+    await loadUptimeData(7);
+}
+
+async function loadUptimeData(days) {
+    if (!currentUptimeDevice) return;
+    
+    try {
+        const response = await fetch(`/api/uptime/${currentUptimeDevice}?days=${days}`);
+        const stats = await response.json();
+        
+        document.getElementById('uptimePercent').textContent = `${stats.online_percent}%`;
+        document.getElementById('onlineHours').textContent = `${stats.total_online}h`;
+        document.getElementById('offlineHours').textContent = `${stats.total_offline}h`;
+        
+        // Update chart (simplified - would need real historical data from API)
+        if (uptimeChart) uptimeChart.destroy();
+        const ctx = document.getElementById('uptimeChart').getContext('2d');
+        uptimeChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Online', 'Offline'],
+                datasets: [{
+                    data: [stats.online_percent, 100 - stats.online_percent],
+                    backgroundColor: ['#10b981', '#ef4444'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: { legend: { position: 'bottom' } }
+            }
+        });
+    } catch (e) {
+        console.error('Failed to load uptime data', e);
+    }
+}
+
+// ==================== ADD TO DEVICE CARD ====================
+// Add selection checkbox to device card
+function addCheckboxToCard(card, deviceId) {
+    const existingCheckbox = card.querySelector('.device-checkbox');
+    if (existingCheckbox) return;
+    
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'device-checkbox';
+    checkbox.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleDeviceSelection(deviceId, e);
+    });
+    card.insertBefore(checkbox, card.firstChild);
+}
+
+// Add uptime button
+function addUptimeButton(card, deviceId) {
+    const actionsDiv = card.querySelector('.card-actions');
+    if (!actionsDiv || actionsDiv.querySelector('.uptime-btn')) return;
+    
+    const uptimeBtn = document.createElement('button');
+    uptimeBtn.className = 'btn-secondary';
+    uptimeBtn.innerHTML = '<i class="fas fa-chart-line"></i> Uptime';
+    uptimeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showUptimeReport(deviceId);
+    });
+    actionsDiv.appendChild(uptimeBtn);
+}
+
+// Override renderDeviceCard to include new features
+// Add this to existing renderDeviceCard function after card-actions
+// And add to card structure before quick-commands-panel
+
+// Update attachDeviceEventListeners to include new buttons
+// Add to existing function:
+
+// ==================== INITIALIZE NEW FEATURES ====================
+// Add to DOMContentLoaded:
+// loadWidgets();
+// loadGroups();
+// loadTags();
+
+// Add sidebar toggle for groups
+document.getElementById('groupsSidebarBtn')?.addEventListener('click', () => {
+    groupsSidebarOpen = !groupsSidebarOpen;
+    document.getElementById('groupsSidebar').classList.toggle('open');
+});
+
+// Add mass selection event listeners
+document.getElementById('massCommandBtn')?.addEventListener('click', sendMassCommand);
+document.getElementById('massGroupBtn')?.addEventListener('click', addSelectedToGroup);
+document.getElementById('massDisconnectBtn')?.addEventListener('click', massDisconnect);
+document.getElementById('massClearBtn')?.addEventListener('click', clearSelection);
+document.getElementById('massCommandSendBtn')?.addEventListener('click', executeMassCommand);
+document.getElementById('confirmAddToGroupBtn')?.addEventListener('click', confirmAddToGroup);
+document.getElementById('createGroupBtn')?.addEventListener('click', () => {
+    document.getElementById('createGroupModal').style.display = 'block';
+});
+document.getElementById('createGroupConfirmBtn')?.addEventListener('click', () => {
+    const name = document.getElementById('newGroupName').value.trim();
+    if (name) {
+        createGroup(name);
+        document.getElementById('createGroupModal').style.display = 'none';
+        document.getElementById('newGroupName').value = '';
+    }
+});
+document.getElementById('resetWidgetsBtn')?.addEventListener('click', async () => {
+    await fetch('/api/widgets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify([])
+    });
+    await loadWidgets();
+    showToast('Widgets reset', 'success');
+});
+
+// Uptime period buttons
+document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadUptimeData(parseInt(btn.dataset.days));
+    });
+});
+
+// Update device card rendering to include checkbox and uptime button
+// Add this line inside renderDeviceCard after creating the card div:
+// addCheckboxToCard(card, id);
+// addUptimeButton(card, id);

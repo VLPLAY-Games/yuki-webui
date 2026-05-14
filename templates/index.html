@@ -146,6 +146,154 @@
                         <i class="fas fa-copy"></i>
                     </button>
                 </div>
+
+                <!-- Widget Dashboard -->
+                <div class="section-header">
+                    <h2><i class="fas fa-th-large"></i> Dashboard Widgets</h2>
+                    <button id="resetWidgetsBtn" class="btn-secondary small">Reset Widgets</button>
+                </div>
+                <div id="widgetGrid" class="dashboard-grid">
+                    <!-- Виджеты будут динамически загружаться -->
+                </div>
+
+                <!-- Добавить перед закрывающим main-content -->
+                <!-- Groups Sidebar -->
+                <div id="groupsSidebar" class="groups-sidebar">
+                    <div class="groups-header">
+                        <h3><i class="fas fa-layer-group"></i> Device Groups</h3>
+                        <button id="closeGroupsBtn" class="btn-icon">&times;</button>
+                    </div>
+                    <div class="groups-list" id="groupsList"></div>
+                    <div class="groups-footer" style="padding: 15px; border-top: 1px solid var(--border-color);">
+                        <button id="createGroupBtn" class="btn-primary" style="width: 100%;">
+                            <i class="fas fa-plus"></i> Create Group
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Mass Selection Bar -->
+                <div id="massSelectBar" class="mass-select-bar">
+                    <div class="mass-select-info">
+                        <i class="fas fa-check-square"></i>
+                        <span id="selectedCount">0</span> devices selected
+                    </div>
+                    <div class="mass-select-actions">
+                        <button id="massCommandBtn" class="btn-primary">
+                            <i class="fas fa-paper-plane"></i> Send Command
+                        </button>
+                        <button id="massGroupBtn" class="btn-secondary">
+                            <i class="fas fa-layer-group"></i> Add to Group
+                        </button>
+                        <button id="massDisconnectBtn" class="btn-secondary">
+                            <i class="fas fa-plug"></i> Disconnect
+                        </button>
+                        <button id="massClearBtn" class="btn-secondary">
+                            <i class="fas fa-times"></i> Clear
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Add to Group Modal -->
+                <div id="addToGroupModal" class="modal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3><i class="fas fa-layer-group"></i> Add to Group</h3>
+                            <button class="modal-close">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <p>Select group for <span id="groupDevicesList"></span></p>
+                            <select id="groupSelect" class="form-control" style="width:100%; padding:10px;">
+                                <option value="">-- Select Group --</option>
+                            </select>
+                        </div>
+                        <div class="modal-footer">
+                            <button id="confirmAddToGroupBtn" class="btn-primary">Add</button>
+                            <button class="btn-secondary modal-cancel">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Uptime Modal -->
+                <div id="uptimeModal" class="modal">
+                    <div class="modal-content uptime-modal">
+                        <div class="modal-header">
+                            <h3><i class="fas fa-chart-line"></i> Uptime Report</h3>
+                            <button class="modal-close">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="uptime-period-selector">
+                                <button class="period-btn" data-days="1">1 Day</button>
+                                <button class="period-btn active" data-days="7">7 Days</button>
+                                <button class="period-btn" data-days="30">30 Days</button>
+                            </div>
+                            <div class="uptime-stats" id="uptimeStats">
+                                <div class="uptime-stat-card">
+                                    <h4>Uptime</h4>
+                                    <div class="value" id="uptimePercent">--%</div>
+                                </div>
+                                <div class="uptime-stat-card">
+                                    <h4>Online Hours</h4>
+                                    <div class="value" id="onlineHours">--</div>
+                                </div>
+                                <div class="uptime-stat-card">
+                                    <h4>Offline Hours</h4>
+                                    <div class="value" id="offlineHours">--</div>
+                                </div>
+                            </div>
+                            <div class="uptime-chart-container">
+                                <canvas id="uptimeChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Create Group Modal -->
+                <div id="createGroupModal" class="modal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3><i class="fas fa-folder-plus"></i> Create Group</h3>
+                            <button class="modal-close">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="form-group">
+                                <label>Group Name</label>
+                                <input type="text" id="newGroupName" placeholder="e.g., Living Room, Servers">
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button id="createGroupConfirmBtn" class="btn-primary">Create</button>
+                            <button class="btn-secondary modal-cancel">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mass Command Modal -->
+                <div id="massCommandModal" class="modal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3><i class="fas fa-paper-plane"></i> Mass Command</h3>
+                            <button class="modal-close">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <p>Execute command on <strong id="massDeviceCount">0</strong> devices</p>
+                            <div class="form-group">
+                                <label>Command</label>
+                                <input type="text" id="massCommand" placeholder="e.g., reboot, update">
+                            </div>
+                            <div class="form-group">
+                                <label>Payload (JSON)</label>
+                                <textarea id="massPayload" rows="3" placeholder="{}"></textarea>
+                            </div>
+                            <div class="warning-note" style="background: rgba(239,68,68,0.1); padding:10px; border-radius:8px; margin-top:10px;">
+                                <i class="fas fa-exclamation-triangle"></i> Command will be sent to ALL selected devices
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button id="massCommandSendBtn" class="btn-primary">Send to All</button>
+                            <button class="btn-secondary modal-cancel">Cancel</button>
+                        </div>
+                    </div>
+                </div>
                 
                 <div class="section-header">
                     <h2><i class="fas fa-chart-line"></i> Recent Activity</h2>
