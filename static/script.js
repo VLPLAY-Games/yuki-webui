@@ -65,6 +65,10 @@ document.addEventListener('DOMContentLoaded', () => {
     loadGroups();
     loadTags();
 
+    addAddWidgetButton();
+    requestTokenInfo();
+    setInterval(requestTokenInfo, 300000);
+
     initAdminListeners();
     
     // Start periodic updates
@@ -598,7 +602,7 @@ function connectWebSocket() {
         updateConnectionStatus(true);
         addLogEntry('system', 'Connected to Core');
         if (reconnectTimer) clearTimeout(reconnectTimer);
-        ws.send(JSON.stringify({ type: 'get_token_info' }));
+        requestTokenInfo(); // вместо прямого ws.send
         ws.send(JSON.stringify({ type: 'get_devices' }));
         updateServerStatus(true, 'Connected');
     };
@@ -747,6 +751,19 @@ function handleMessage(data) {
         case 'broadcast_result':
             showToast(`Broadcast sent to ${data.sent} devices`, 'success');
             break;
+
+        case 'system_metrics':
+            updateSystemMetrics(data.payload);
+            break;
+        case 'blacklist':
+            updateBlacklist(data.devices);
+            break;
+        case 'audit_log':
+            updateAuditLog(data.logs);
+            break;
+        case 'broadcast_result':
+            showToast(`Broadcast sent to ${data.sent} devices`, 'success');
+            break;
     }
 }
 
@@ -779,6 +796,15 @@ function handleCommandResult(data) {
     }
 }
 
+function formatTime(seconds) {
+    if (seconds <= 0) return 'Expired';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    return `${h}h ${m}m ${s}s`;
+}
+
+
 function updateTokenInfo(payload) {
     const infoDiv = document.getElementById('tokenInfo');
     if (infoDiv) {
@@ -787,13 +813,12 @@ function updateTokenInfo(payload) {
         infoDiv.innerHTML = `<strong>Created:</strong> ${created}<br><strong>Expires:</strong> ${expiresIn}`;
     }
     
-    // Also update widget token info
-    const widgetTokenInfo = document.getElementById('widgetTokenInfo');
-    if (widgetTokenInfo) {
+    // Update all token widgets
+    document.querySelectorAll('[id^="widgetTokenInfo"]').forEach(widget => {
         const created = payload.created_at ? new Date(payload.created_at * 1000).toLocaleString() : 'N/A';
         const expiresIn = payload.expires_in ? formatTime(payload.expires_in) : 'Never';
-        widgetTokenInfo.innerHTML = `<strong>Created:</strong> ${created}<br><strong>Expires:</strong> ${expiresIn}`;
-    }
+        widget.innerHTML = `<strong>Created:</strong> ${created}<br><strong>Expires:</strong> ${expiresIn}`;
+    });
 }
 
 // ==================== DASHBOARD STATS ====================
@@ -1367,27 +1392,52 @@ function escapeHtml(str) {
 // ==================== WIDGETS SYSTEM ====================
 let widgets = [];
 let draggedWidget = null;
+let availableWidgets = ['stats', 'token', 'recent_commands'];
 
 async function loadWidgets() {
     try {
         const response = await fetch('/api/widgets');
         widgets = await response.json();
+        if (!widgets || widgets.length === 0) {
+            widgets = [
+                { id: 'stats', type: 'stats', w: 2, h: 1 },
+                { id: 'token', type: 'token', w: 2, h: 1 },
+                { id: 'recent', type: 'recent_commands', w: 2, h: 2 }
+            ];
+            await saveWidgets();
+        }
         renderWidgets();
     } catch (e) {
         console.error('Failed to load widgets', e);
+        widgets = [
+            { id: 'stats', type: 'stats', w: 2, h: 1 },
+            { id: 'token', type: 'token', w: 2, h: 1 },
+            { id: 'recent', type: 'recent_commands', w: 2, h: 2 }
+        ];
+        renderWidgets();
     }
 }
+
+async function saveWidgets() {
+    try {
+        await fetch('/api/widgets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(widgets)
+        });
+    } catch (e) {
+        console.error('Failed to save widgets', e);
+    }
+}
+
 
 function renderWidgets() {
     const container = document.getElementById('widgetGrid');
     if (!container) return;
     
-    if (widgets.length === 0) {
-        widgets = [
-            { id: 'stats', type: 'stats', x: 0, y: 0, w: 2, h: 1 },
-            { id: 'token', type: 'token', x: 0, y: 1, w: 2, h: 1 },
-            { id: 'recent', type: 'recent_commands', x: 0, y: 2, w: 2, h: 2 }
-        ];
+    if (!widgets || widgets.length === 0) {
+        container.innerHTML = '<div class="loading-placeholder">No widgets. Click "Add Widget" to get started.</div>';
+        return;
     }
     
     container.innerHTML = widgets.map(widget => renderWidget(widget)).join('');
@@ -1399,6 +1449,25 @@ function renderWidgets() {
         el.addEventListener('dragend', handleDragEnd);
         el.addEventListener('dragover', handleDragOver);
         el.addEventListener('drop', handleDrop);
+    });
+    
+    // Add widget controls
+    document.querySelectorAll('.refresh-widget').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const widgetId = btn.dataset.id;
+            const widget = widgets.find(w => w.id === widgetId);
+            if (widget) loadWidgetContent(widget);
+            showToast('Widget refreshed', 'info');
+        });
+    });
+    
+    document.querySelectorAll('.remove-widget').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const widgetId = btn.dataset.id;
+            removeWidget(widgetId);
+        });
     });
     
     // Load widget content
@@ -1414,13 +1483,23 @@ function renderWidget(widget) {
         recent_commands: 'fa-history'
     };
     
+    const titles = {
+        stats: 'Statistics',
+        token: 'Token Info',
+        recent_commands: 'Recent Commands'
+    };
+    
     return `
-        <div class="dashboard-widget" data-widget-id="${widget.id}" style="grid-column: span ${widget.w};">
+        <div class="dashboard-widget" data-widget-id="${widget.id}" style="grid-column: span ${widget.w || 2};">
             <div class="widget-header">
-                <h3><i class="fas ${icons[widget.type]}"></i> ${getWidgetTitle(widget.type)}</h3>
+                <h3><i class="fas ${icons[widget.type]}"></i> ${titles[widget.type] || widget.type}</h3>
                 <div class="widget-controls">
-                    <button class="refresh-widget" data-id="${widget.id}"><i class="fas fa-sync-alt"></i></button>
-                    <button class="remove-widget" data-id="${widget.id}"><i class="fas fa-times"></i></button>
+                    <button class="refresh-widget" data-id="${widget.id}" title="Refresh">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <button class="remove-widget" data-id="${widget.id}" title="Remove">
+                        <i class="fas fa-times"></i>
+                    </button>
                 </div>
             </div>
             <div class="widget-content" id="widget-${widget.id}">
@@ -1428,6 +1507,91 @@ function renderWidget(widget) {
             </div>
         </div>
     `;
+}
+
+async function removeWidget(widgetId) {
+    if (confirm('Remove this widget?')) {
+        widgets = widgets.filter(w => w.id !== widgetId);
+        await saveWidgets();
+        renderWidgets();
+        showToast('Widget removed', 'success');
+    }
+}
+
+function showAddWidgetModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'addWidgetModal';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3><i class="fas fa-plus"></i> Add Widget</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Widget Type</label>
+                    <select id="newWidgetType" class="form-control">
+                        <option value="stats">📊 Statistics (Total/Online/Pending)</option>
+                        <option value="token">🔑 Token Info</option>
+                        <option value="recent_commands">📜 Recent Commands</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="confirmAddWidgetBtn" class="btn-primary">Add Widget</button>
+                <button class="btn-secondary modal-cancel">Cancel</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.style.display = 'block';
+    
+    modal.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
+        btn.addEventListener('click', () => modal.remove());
+    });
+    
+    document.getElementById('confirmAddWidgetBtn')?.addEventListener('click', async () => {
+        const type = document.getElementById('newWidgetType').value;
+        const newId = `${type}_${Date.now()}`;
+        widgets.push({
+            id: newId,
+            type: type,
+            w: 2,
+            h: type === 'recent_commands' ? 2 : 1
+        });
+        await saveWidgets();
+        renderWidgets();
+        modal.remove();
+        showToast('Widget added', 'success');
+    });
+}
+
+async function resetWidgets() {
+    if (confirm('Reset all widgets to default? This will remove all custom widgets.')) {
+        widgets = [
+            { id: 'stats', type: 'stats', w: 2, h: 1 },
+            { id: 'token', type: 'token', w: 2, h: 1 },
+            { id: 'recent', type: 'recent_commands', w: 2, h: 2 }
+        ];
+        await saveWidgets();
+        renderWidgets();
+        showToast('Widgets reset to default', 'success');
+    }
+}
+
+function addAddWidgetButton() {
+    const sectionHeader = document.querySelector('#dashboardView .section-header:first-of-type');
+    if (sectionHeader && !document.getElementById('addWidgetBtn')) {
+        const addBtn = document.createElement('button');
+        addBtn.id = 'addWidgetBtn';
+        addBtn.className = 'btn-secondary small';
+        addBtn.innerHTML = '<i class="fas fa-plus"></i> Add Widget';
+        addBtn.style.marginLeft = '10px';
+        addBtn.addEventListener('click', showAddWidgetModal);
+        sectionHeader.appendChild(addBtn);
+    }
 }
 
 function getWidgetTitle(type) {
@@ -1455,15 +1619,20 @@ function loadWidgetContent(widget) {
             updateMiniStats();
             break;
         case 'token':
-            // Try to get current token info from existing element
-            const tokenInfoDiv = document.getElementById('tokenInfo');
-            const tokenHtml = tokenInfoDiv ? tokenInfoDiv.innerHTML : 'Loading...';
-            container.innerHTML = `<div id="widgetTokenInfo">${tokenHtml}</div>`;
+            container.innerHTML = `<div id="widgetTokenInfo" class="loading-placeholder">Loading token info...</div>`;
+            // Запрашиваем токен сразу
+            requestTokenInfo();
             break;
         case 'recent_commands':
             container.innerHTML = `<div id="widgetRecentCommands" class="recent-commands-list"></div>`;
             updateRecentCommandsWidget();
             break;
+    }
+}
+
+function requestTokenInfo() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'get_token_info' }));
     }
 }
 
@@ -2011,18 +2180,6 @@ function addUptimeButton(card, deviceId) {
     actionsDiv.appendChild(uptimeBtn);
 }
 
-// Override renderDeviceCard to include new features
-// Add this to existing renderDeviceCard function after card-actions
-// And add to card structure before quick-commands-panel
-
-// Update attachDeviceEventListeners to include new buttons
-// Add to existing function:
-
-// ==================== INITIALIZE NEW FEATURES ====================
-// Add to DOMContentLoaded:
-// loadWidgets();
-// loadGroups();
-// loadTags();
 
 // Add sidebar toggle for groups
 document.getElementById('groupsSidebarBtn')?.addEventListener('click', () => {
@@ -2048,15 +2205,7 @@ document.getElementById('createGroupConfirmBtn')?.addEventListener('click', () =
         document.getElementById('newGroupName').value = '';
     }
 });
-document.getElementById('resetWidgetsBtn')?.addEventListener('click', async () => {
-    await fetch('/api/widgets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify([])
-    });
-    await loadWidgets();
-    showToast('Widgets reset', 'success');
-});
+document.getElementById('resetWidgetsBtn')?.addEventListener('click', resetWidgets);
 
 // Uptime period buttons
 document.querySelectorAll('.period-btn').forEach(btn => {
@@ -2273,9 +2422,6 @@ async function loadCommandStats(period = 'day') {
         });
     }
 }
-
-// ==================== ADD TO HANDLEMESSAGE ====================
-// Добавить в handleMessage:
 
 
 // ==================== INIT ADMIN LISTENERS ====================
