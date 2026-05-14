@@ -1,4 +1,4 @@
-// script.js - Modern Dashboard
+// script.js - Modern Dashboard with Settings
 
 // State
 let ws = null;
@@ -13,6 +13,25 @@ let pendingAuthRequest = null;
 let commandHistory = [];
 let eventLogs = [];
 let notifiedPendingIds = new Set();
+let manualDisconnect = false;
+
+// Settings
+let settings = {
+    wsAddress: 'ws://localhost:8000/webui',
+    autoReconnect: true,
+    reconnectDelay: 3,
+    maxReconnectAttempts: 0,
+    theme: 'dark',
+    defaultView: 'dashboard',
+    defaultDisplayMode: 'grid',
+    animationsEnabled: true,
+    notifyDeviceOnline: true,
+    notifyDeviceOffline: true,
+    notifyCommandResult: false,
+    notifyPendingDevice: true,
+    historyLimit: 100,
+    reconnectAttempts: 0
+};
 
 // DOM Elements
 let sidebar, devicesContainer, historyList, logsContainer, searchInput;
@@ -26,11 +45,15 @@ document.addEventListener('DOMContentLoaded', () => {
     logsContainer = document.getElementById('logsContainer');
     searchInput = document.getElementById('searchInput');
     
+    // Load settings
+    loadSettings();
+    
     // Initialize theme
     initTheme();
     
     // Event listeners
     initEventListeners();
+    initSettingsListeners();
     
     // Connect WebSocket
     connectWebSocket();
@@ -40,7 +63,347 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Start periodic updates
     setInterval(updateDashboardStats, 1000);
+    setInterval(updateServerInfo, 5000);
+    
+    // Update server info
+    updateServerInfo();
 });
+
+// ==================== SETTINGS MANAGEMENT ====================
+
+function loadSettings() {
+    const saved = localStorage.getItem('yuki_settings');
+    if (saved) {
+        try {
+            const parsed = JSON.parse(saved);
+            settings = { ...settings, ...parsed };
+        } catch (e) {}
+    }
+    
+    // Apply settings to UI if elements exist
+    const wsAddressEl = document.getElementById('wsAddress');
+    if (wsAddressEl) wsAddressEl.value = settings.wsAddress;
+    
+    const autoReconnectEl = document.getElementById('autoReconnectToggle');
+    if (autoReconnectEl) autoReconnectEl.checked = settings.autoReconnect;
+    
+    const reconnectDelayEl = document.getElementById('reconnectDelay');
+    if (reconnectDelayEl) reconnectDelayEl.value = settings.reconnectDelay;
+    
+    const maxReconnectAttemptsEl = document.getElementById('maxReconnectAttempts');
+    if (maxReconnectAttemptsEl) maxReconnectAttemptsEl.value = settings.maxReconnectAttempts;
+    
+    const themeSelectEl = document.getElementById('themeSelect');
+    if (themeSelectEl) themeSelectEl.value = settings.theme;
+    
+    const defaultViewEl = document.getElementById('defaultView');
+    if (defaultViewEl) defaultViewEl.value = settings.defaultView;
+    
+    const defaultDisplayModeEl = document.getElementById('defaultDisplayMode');
+    if (defaultDisplayModeEl) defaultDisplayModeEl.value = settings.defaultDisplayMode;
+    
+    const animationsToggleEl = document.getElementById('animationsToggle');
+    if (animationsToggleEl) animationsToggleEl.checked = settings.animationsEnabled;
+    
+    const notifyDeviceOnlineEl = document.getElementById('notifyDeviceOnline');
+    if (notifyDeviceOnlineEl) notifyDeviceOnlineEl.checked = settings.notifyDeviceOnline;
+    
+    const notifyDeviceOfflineEl = document.getElementById('notifyDeviceOffline');
+    if (notifyDeviceOfflineEl) notifyDeviceOfflineEl.checked = settings.notifyDeviceOffline;
+    
+    const notifyCommandResultEl = document.getElementById('notifyCommandResult');
+    if (notifyCommandResultEl) notifyCommandResultEl.checked = settings.notifyCommandResult;
+    
+    const notifyPendingDeviceEl = document.getElementById('notifyPendingDevice');
+    if (notifyPendingDeviceEl) notifyPendingDeviceEl.checked = settings.notifyPendingDevice;
+    
+    const historyLimitEl = document.getElementById('historyLimit');
+    if (historyLimitEl) historyLimitEl.value = settings.historyLimit;
+    
+    // Apply theme
+    if (settings.theme === 'auto') {
+        const darkModeMedia = window.matchMedia('(prefers-color-scheme: dark)');
+        currentTheme = darkModeMedia.matches ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', currentTheme);
+        darkModeMedia.addEventListener('change', (e) => {
+            if (settings.theme === 'auto') {
+                currentTheme = e.matches ? 'dark' : 'light';
+                document.documentElement.setAttribute('data-theme', currentTheme);
+            }
+        });
+    } else {
+        currentTheme = settings.theme;
+        document.documentElement.setAttribute('data-theme', currentTheme);
+    }
+    
+    // Apply default view
+    if (settings.defaultView !== 'dashboard') {
+        setTimeout(() => {
+            switchView(settings.defaultView);
+            document.querySelectorAll('.nav-item').forEach(nav => {
+                nav.classList.remove('active');
+                if (nav.dataset.view === settings.defaultView) {
+                    nav.classList.add('active');
+                }
+            });
+        }, 100);
+    }
+    
+    // Apply display mode
+    currentViewMode = settings.defaultDisplayMode;
+    document.querySelectorAll('.view-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.view === settings.defaultDisplayMode) {
+            btn.classList.add('active');
+        }
+    });
+    
+    // Apply animations
+    if (!settings.animationsEnabled) {
+        document.body.classList.add('no-animations');
+    }
+}
+
+function saveSettings() {
+    const wsAddressEl = document.getElementById('wsAddress');
+    if (wsAddressEl) settings.wsAddress = wsAddressEl.value;
+    
+    const autoReconnectEl = document.getElementById('autoReconnectToggle');
+    if (autoReconnectEl) settings.autoReconnect = autoReconnectEl.checked;
+    
+    const reconnectDelayEl = document.getElementById('reconnectDelay');
+    if (reconnectDelayEl) settings.reconnectDelay = parseInt(reconnectDelayEl.value);
+    
+    const maxReconnectAttemptsEl = document.getElementById('maxReconnectAttempts');
+    if (maxReconnectAttemptsEl) settings.maxReconnectAttempts = parseInt(maxReconnectAttemptsEl.value);
+    
+    const themeSelectEl = document.getElementById('themeSelect');
+    if (themeSelectEl) settings.theme = themeSelectEl.value;
+    
+    const defaultViewEl = document.getElementById('defaultView');
+    if (defaultViewEl) settings.defaultView = defaultViewEl.value;
+    
+    const defaultDisplayModeEl = document.getElementById('defaultDisplayMode');
+    if (defaultDisplayModeEl) settings.defaultDisplayMode = defaultDisplayModeEl.value;
+    
+    const animationsToggleEl = document.getElementById('animationsToggle');
+    if (animationsToggleEl) settings.animationsEnabled = animationsToggleEl.checked;
+    
+    const notifyDeviceOnlineEl = document.getElementById('notifyDeviceOnline');
+    if (notifyDeviceOnlineEl) settings.notifyDeviceOnline = notifyDeviceOnlineEl.checked;
+    
+    const notifyDeviceOfflineEl = document.getElementById('notifyDeviceOffline');
+    if (notifyDeviceOfflineEl) settings.notifyDeviceOffline = notifyDeviceOfflineEl.checked;
+    
+    const notifyCommandResultEl = document.getElementById('notifyCommandResult');
+    if (notifyCommandResultEl) settings.notifyCommandResult = notifyCommandResultEl.checked;
+    
+    const notifyPendingDeviceEl = document.getElementById('notifyPendingDevice');
+    if (notifyPendingDeviceEl) settings.notifyPendingDevice = notifyPendingDeviceEl.checked;
+    
+    const historyLimitEl = document.getElementById('historyLimit');
+    if (historyLimitEl) settings.historyLimit = parseInt(historyLimitEl.value);
+    
+    localStorage.setItem('yuki_settings', JSON.stringify(settings));
+    
+    // Apply animations
+    if (settings.animationsEnabled) {
+        document.body.classList.remove('no-animations');
+    } else {
+        document.body.classList.add('no-animations');
+    }
+    
+    showToast('Settings saved', 'success');
+}
+
+function exportSettings() {
+    const exportData = {
+        version: '2.0',
+        timestamp: new Date().toISOString(),
+        settings: settings,
+        devices: devices,
+        commandHistory: commandHistory.slice(0, 50)
+    };
+    
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.href = url;
+    link.download = `yuki_backup_${new Date().toISOString().slice(0,19)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    
+    showToast('Settings exported', 'success');
+}
+
+function importSettings(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (data.settings) {
+                settings = { ...settings, ...data.settings };
+                saveSettings();
+                loadSettings();
+            }
+            if (data.commandHistory) {
+                commandHistory = data.commandHistory.slice(0, settings.historyLimit);
+                saveStoredData();
+                renderHistory();
+            }
+            showToast('Settings imported successfully', 'success');
+        } catch (err) {
+            showToast('Invalid backup file', 'error');
+        }
+    };
+    reader.readAsText(file);
+}
+
+function resetSettings() {
+    if (confirm('Reset all settings to defaults? This cannot be undone.')) {
+        localStorage.removeItem('yuki_settings');
+        localStorage.removeItem('commandHistory');
+        location.reload();
+    }
+}
+
+function clearAllData() {
+    if (confirm('Clear ALL data (settings, history, logs)? This cannot be undone.')) {
+        localStorage.clear();
+        location.reload();
+    }
+}
+
+async function testConnection() {
+    const address = document.getElementById('wsAddress').value;
+    const testWs = new WebSocket(address);
+    
+    const timeout = setTimeout(() => {
+        testWs.close();
+        updateServerStatus(false, 'Timeout');
+        showToast('Connection timeout', 'error');
+    }, 5000);
+    
+    testWs.onopen = () => {
+        clearTimeout(timeout);
+        updateServerStatus(true, 'Connected');
+        showToast('Connection successful!', 'success');
+        testWs.close();
+    };
+    
+    testWs.onerror = () => {
+        clearTimeout(timeout);
+        updateServerStatus(false, 'Failed');
+        showToast('Connection failed', 'error');
+    };
+}
+
+function updateServerStatus(connected, message) {
+    const statusEl = document.getElementById('coreServerStatus');
+    if (statusEl) {
+        statusEl.textContent = message || (connected ? 'Connected' : 'Disconnected');
+        statusEl.className = `status-badge ${connected ? 'online' : 'offline'}`;
+    }
+}
+
+function updateServerInfo() {
+    // Update connected devices count
+    const devicesCount = Object.keys(devices).length;
+    const devicesCountEl = document.getElementById('connectedDevicesCount');
+    if (devicesCountEl) devicesCountEl.textContent = devicesCount;
+    
+    // Update browser info
+    const browserInfoEl = document.getElementById('browserInfo');
+    if (browserInfoEl) {
+        browserInfoEl.textContent = navigator.userAgent.split(' ').slice(-2).join(' ').substring(0, 50);
+    }
+    
+    const languageInfoEl = document.getElementById('languageInfo');
+    if (languageInfoEl) languageInfoEl.textContent = navigator.language;
+    
+    const timezoneInfoEl = document.getElementById('timezoneInfo');
+    if (timezoneInfoEl) timezoneInfoEl.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    
+    // Calculate uptime (mock - would need server API)
+    const startTime = localStorage.getItem('yuki_start_time');
+    const uptimeEl = document.getElementById('serverUptime');
+    if (uptimeEl) {
+        if (startTime) {
+            const uptime = Math.floor((Date.now() - parseInt(startTime)) / 1000);
+            const hours = Math.floor(uptime / 3600);
+            const minutes = Math.floor((uptime % 3600) / 60);
+            uptimeEl.textContent = `${hours}h ${minutes}m`;
+        } else {
+            localStorage.setItem('yuki_start_time', Date.now().toString());
+            uptimeEl.textContent = 'Just started';
+        }
+    }
+}
+
+function initSettingsListeners() {
+    const applyConnectionBtn = document.getElementById('applyConnectionBtn');
+    if (applyConnectionBtn) {
+        applyConnectionBtn.addEventListener('click', () => {
+            saveSettings();
+            manualDisconnect = false;
+            if (ws) {
+                ws.close();
+            }
+            setTimeout(() => connectWebSocket(), 500);
+        });
+    }
+    
+    const testConnectionBtn = document.getElementById('testConnectionBtn');
+    if (testConnectionBtn) testConnectionBtn.addEventListener('click', testConnection);
+    
+    const exportSettingsBtn = document.getElementById('exportSettingsBtn');
+    if (exportSettingsBtn) exportSettingsBtn.addEventListener('click', exportSettings);
+    
+    const importSettingsBtn = document.getElementById('importSettingsBtn');
+    const importSettingsFile = document.getElementById('importSettingsFile');
+    if (importSettingsBtn && importSettingsFile) {
+        importSettingsBtn.addEventListener('click', () => {
+            importSettingsFile.click();
+        });
+        importSettingsFile.addEventListener('change', (e) => {
+            if (e.target.files[0]) importSettings(e.target.files[0]);
+            e.target.value = '';
+        });
+    }
+    
+    const resetSettingsBtn = document.getElementById('resetSettingsBtn');
+    if (resetSettingsBtn) resetSettingsBtn.addEventListener('click', resetSettings);
+    
+    const clearAllDataBtn = document.getElementById('clearAllDataBtn');
+    if (clearAllDataBtn) clearAllDataBtn.addEventListener('click', clearAllData);
+    
+    // Auto-save on input change
+    const autoSaveInputs = ['wsAddress', 'autoReconnectToggle', 'reconnectDelay', 'maxReconnectAttempts', 
+                            'themeSelect', 'defaultView', 'defaultDisplayMode', 'animationsToggle',
+                            'notifyDeviceOnline', 'notifyDeviceOffline', 'notifyCommandResult', 
+                            'notifyPendingDevice', 'historyLimit'];
+    
+    autoSaveInputs.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('change', () => saveSettings());
+            if (el.type !== 'checkbox' && el.type !== 'select-one') {
+                el.addEventListener('input', () => saveSettings());
+            }
+        }
+    });
+    
+    // GitHub link
+    const githubLink = document.getElementById('githubLink');
+    if (githubLink) {
+        githubLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.open('https://github.com/yuki-system/dashboard', '_blank');
+        });
+    }
+}
+
+// ==================== THEME ====================
 
 function initTheme() {
     document.documentElement.setAttribute('data-theme', currentTheme);
@@ -55,6 +418,8 @@ function initTheme() {
         });
     }
 }
+
+// ==================== EVENT LISTENERS ====================
 
 function initEventListeners() {
     // Sidebar toggle
@@ -141,16 +506,15 @@ function switchView(view) {
 }
 
 function initModalHandlers() {
-    // Command modal
     const commandModal = document.getElementById('commandModal');
     const confirmModal = document.getElementById('confirmModal');
     const authModal = document.getElementById('authModal');
     
     document.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
         btn.addEventListener('click', () => {
-            commandModal.style.display = 'none';
-            confirmModal.style.display = 'none';
-            authModal.style.display = 'none';
+            if (commandModal) commandModal.style.display = 'none';
+            if (confirmModal) confirmModal.style.display = 'none';
+            if (authModal) authModal.style.display = 'none';
         });
     });
     
@@ -169,11 +533,11 @@ function initModalHandlers() {
             return;
         }
         sendCommand(deviceId, command, payload);
-        commandModal.style.display = 'none';
+        if (commandModal) commandModal.style.display = 'none';
     });
     
     document.getElementById('confirmYesBtn')?.addEventListener('click', () => {
-        if (pendingConfirmation) {
+        if (pendingConfirmation && ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
                 type: 'confirm_response',
                 id: pendingConfirmation.id,
@@ -184,12 +548,12 @@ function initModalHandlers() {
             }));
             showToast(`Command "${pendingConfirmation.command}" confirmed`, 'warning');
         }
-        confirmModal.style.display = 'none';
+        if (confirmModal) confirmModal.style.display = 'none';
         pendingConfirmation = null;
     });
     
     document.getElementById('confirmNoBtn')?.addEventListener('click', () => {
-        confirmModal.style.display = 'none';
+        if (confirmModal) confirmModal.style.display = 'none';
         pendingConfirmation = null;
     });
     
@@ -197,36 +561,39 @@ function initModalHandlers() {
         if (pendingAuthRequest) {
             approveDevice(pendingAuthRequest.device_id, true);
         }
-        authModal.style.display = 'none';
+        if (authModal) authModal.style.display = 'none';
     });
     
     document.getElementById('authDenyBtn')?.addEventListener('click', () => {
         if (pendingAuthRequest) {
             approveDevice(pendingAuthRequest.device_id, false);
         }
-        authModal.style.display = 'none';
+        if (authModal) authModal.style.display = 'none';
     });
     
     window.onclick = (e) => {
-        if (e.target === commandModal) commandModal.style.display = 'none';
-        if (e.target === confirmModal) confirmModal.style.display = 'none';
-        if (e.target === authModal) authModal.style.display = 'none';
+        if (commandModal && e.target === commandModal) commandModal.style.display = 'none';
+        if (confirmModal && e.target === confirmModal) confirmModal.style.display = 'none';
+        if (authModal && e.target === authModal) authModal.style.display = 'none';
     };
 }
 
-// WebSocket
+// ==================== WEBSOCKET ====================
+
 function connectWebSocket() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
     
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${protocol}//${window.location.hostname}:8000/webui`);
+    const address = settings.wsAddress;
+    ws = new WebSocket(address);
     
     ws.onopen = () => {
+        settings.reconnectAttempts = 0;
         updateConnectionStatus(true);
         addLogEntry('system', 'Connected to Core');
         if (reconnectTimer) clearTimeout(reconnectTimer);
         ws.send(JSON.stringify({ type: 'get_token_info' }));
         ws.send(JSON.stringify({ type: 'get_devices' }));
+        updateServerStatus(true, 'Connected');
     };
     
     ws.onmessage = (event) => {
@@ -241,21 +608,34 @@ function connectWebSocket() {
     ws.onclose = () => {
         updateConnectionStatus(false);
         addLogEntry('system', 'Disconnected from Core');
-        scheduleReconnect();
+        updateServerStatus(false, 'Disconnected');
+        if (!manualDisconnect) {
+            scheduleReconnect();
+        }
     };
     
     ws.onerror = (error) => {
         console.error('WebSocket error', error);
         addLogEntry('error', 'WebSocket connection error');
+        updateServerStatus(false, 'Error');
     };
 }
 
 function scheduleReconnect() {
-    if (reconnectTimer) return;
+    if (!settings.autoReconnect || manualDisconnect) return;
+    
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    
+    settings.reconnectAttempts++;
+    if (settings.maxReconnectAttempts > 0 && settings.reconnectAttempts > settings.maxReconnectAttempts) {
+        addLogEntry('system', 'Max reconnect attempts reached');
+        return;
+    }
+    
     reconnectTimer = setTimeout(() => {
-        addLogEntry('system', 'Reconnecting...');
+        addLogEntry('system', `Reconnecting... (Attempt ${settings.reconnectAttempts})`);
         connectWebSocket();
-    }, 3000);
+    }, settings.reconnectDelay * 1000);
 }
 
 function updateConnectionStatus(connected) {
@@ -263,19 +643,35 @@ function updateConnectionStatus(connected) {
     if (statusEl) {
         statusEl.classList.toggle('connected', connected);
         statusEl.classList.toggle('disconnected', !connected);
-        statusEl.querySelector('span').textContent = connected ? 'Connected' : 'Disconnected';
+        const span = statusEl.querySelector('span');
+        if (span) span.textContent = connected ? 'Connected' : 'Disconnected';
     }
 }
+
+// ==================== MESSAGE HANDLING ====================
 
 function handleMessage(data) {
     switch (data.type) {
         case 'devices_list':
         case 'devices_update':
             if (data.payload?.devices) {
+                const oldDevices = { ...devices };
                 devices = data.payload.devices;
                 updateDashboardStats();
                 renderDevices();
                 checkAndNotifyPending();
+                
+                // Check for device status changes
+                Object.entries(devices).forEach(([id, device]) => {
+                    const oldDevice = oldDevices[id];
+                    if (oldDevice && oldDevice.status !== device.status) {
+                        if (device.status === 'online' && settings.notifyDeviceOnline) {
+                            showToast(`${id} is now online`, 'success');
+                        } else if (device.status === 'offline' && settings.notifyDeviceOffline) {
+                            showToast(`${id} went offline`, 'warning');
+                        }
+                    }
+                });
             }
             break;
             
@@ -286,9 +682,12 @@ function handleMessage(data) {
                 command: data.payload.command,
                 params: data.payload.params
             };
-            document.getElementById('confirmText').textContent = 
-                `Execute "${data.payload.command}" on ${data.payload.device_id}?`;
-            document.getElementById('confirmModal').style.display = 'block';
+            const confirmText = document.getElementById('confirmText');
+            if (confirmText) {
+                confirmText.textContent = `Execute "${data.payload.command}" on ${data.payload.device_id}?`;
+            }
+            const confirmModal = document.getElementById('confirmModal');
+            if (confirmModal) confirmModal.style.display = 'block';
             break;
             
         case 'device_auth_request':
@@ -298,13 +697,18 @@ function handleMessage(data) {
                 device_type: data.payload.device_type,
                 capabilities: data.payload.capabilities
             };
-            document.getElementById('authDeviceId').textContent = data.payload.device_id;
-            document.getElementById('authDeviceType').textContent = data.payload.device_type;
+            const authDeviceId = document.getElementById('authDeviceId');
+            if (authDeviceId) authDeviceId.textContent = data.payload.device_id;
+            const authDeviceType = document.getElementById('authDeviceType');
+            if (authDeviceType) authDeviceType.textContent = data.payload.device_type;
             const capsContainer = document.getElementById('authCapabilitiesList');
-            capsContainer.innerHTML = data.payload.capabilities.map(cap => 
-                `<span class="capability-chip">${cap}</span>`
-            ).join('');
-            document.getElementById('authModal').style.display = 'block';
+            if (capsContainer) {
+                capsContainer.innerHTML = data.payload.capabilities.map(cap => 
+                    `<span class="capability-chip">${escapeHtml(cap)}</span>`
+                ).join('');
+            }
+            const authModal = document.getElementById('authModal');
+            if (authModal) authModal.style.display = 'block';
             break;
             
         case 'token_info':
@@ -341,10 +745,16 @@ function handleCommandResult(data) {
     
     if (success) {
         showToast(`Command executed successfully on ${device_id}`, 'success');
-        addLogEntry('command_result', `✅ Command ${id} succeeded on ${device_id}`);
+        addLogEntry('command_result', `✅ Command succeeded on ${device_id}`);
+        if (settings.notifyCommandResult) {
+            new Notification('Command Success', {
+                body: `Command on ${device_id} completed successfully`,
+                icon: '/static/favicon.ico'
+            });
+        }
     } else {
         showToast(`Command failed on ${device_id}: ${error}`, 'error');
-        addLogEntry('command_result', `❌ Command ${id} failed on ${device_id}: ${error}`);
+        addLogEntry('command_result', `❌ Command failed on ${device_id}: ${error}`);
     }
 }
 
@@ -365,34 +775,45 @@ function formatTime(seconds) {
     return `${h}h ${m}m ${s}s`;
 }
 
+// ==================== DASHBOARD STATS ====================
+
 function updateDashboardStats() {
     const total = Object.keys(devices).length;
     const online = Object.values(devices).filter(d => d.status === 'online').length;
     const pending = Object.values(devices).filter(d => d.status === 'pending').length;
     const offline = Object.values(devices).filter(d => d.status === 'offline').length;
     
-    document.getElementById('totalDevices').textContent = total;
-    document.getElementById('onlineDevices').textContent = online;
-    document.getElementById('pendingDevices').textContent = pending;
-    document.getElementById('offlineDevices').textContent = offline;
-    document.getElementById('deviceCountBadge').textContent = total;
+    const totalEl = document.getElementById('totalDevices');
+    if (totalEl) totalEl.textContent = total;
+    const onlineEl = document.getElementById('onlineDevices');
+    if (onlineEl) onlineEl.textContent = online;
+    const pendingEl = document.getElementById('pendingDevices');
+    if (pendingEl) pendingEl.textContent = pending;
+    const offlineEl = document.getElementById('offlineDevices');
+    if (offlineEl) offlineEl.textContent = offline;
+    const badgeEl = document.getElementById('deviceCountBadge');
+    if (badgeEl) badgeEl.textContent = total;
     
     // Recent commands preview
     const recentContainer = document.getElementById('recentCommands');
-    if (recentContainer && commandHistory.length > 0) {
-        const recent = commandHistory.slice(0, 5);
-        recentContainer.innerHTML = recent.map(cmd => `
-            <div class="history-item" style="padding: 10px;">
-                <span class="history-time">${new Date(cmd.timestamp).toLocaleTimeString()}</span>
-                <span class="history-status ${cmd.status}">${cmd.status}</span>
-                <span class="history-device">${cmd.deviceId}</span>
-                <span class="history-command">${cmd.command}</span>
-            </div>
-        `).join('');
-    } else if (recentContainer) {
-        recentContainer.innerHTML = '<div class="loading-placeholder">No recent commands</div>';
+    if (recentContainer) {
+        if (commandHistory.length > 0) {
+            const recent = commandHistory.slice(0, 5);
+            recentContainer.innerHTML = recent.map(cmd => `
+                <div class="history-item" style="padding: 10px;">
+                    <span class="history-time">${new Date(cmd.timestamp).toLocaleTimeString()}</span>
+                    <span class="history-status ${cmd.status}">${cmd.status}</span>
+                    <span class="history-device">${escapeHtml(cmd.deviceId)}</span>
+                    <span class="history-command">${escapeHtml(cmd.command)}</span>
+                </div>
+            `).join('');
+        } else {
+            recentContainer.innerHTML = '<div class="loading-placeholder">No recent commands</div>';
+        }
     }
 }
+
+// ==================== RENDER DEVICES ====================
 
 function renderDevices() {
     if (!devicesContainer) return;
@@ -428,7 +849,6 @@ function renderDevices() {
         `;
     }
     
-    // Attach event listeners to buttons
     attachDeviceEventListeners();
 }
 
@@ -466,7 +886,6 @@ function renderDeviceCard(id, device) {
                 </button>
             </div>
             
-            <!-- Панель быстрых команд (скрыта по умолчанию) -->
             <div class="quick-commands-panel" id="quick-panel-${id}" style="display: none;">
                 <div class="quick-commands-header">
                     <span><i class="fas fa-bolt"></i> Quick Commands</span>
@@ -476,7 +895,7 @@ function renderDeviceCard(id, device) {
                     ${capabilities.length > 0 ? 
                         capabilities.map(cmd => `
                             <button class="quick-cmd-btn" data-id="${id}" data-cmd="${cmd}">
-                                <i class="fas fa-terminal"></i> ${cmd}
+                                <i class="fas fa-terminal"></i> ${escapeHtml(cmd)}
                             </button>
                         `).join('') : 
                         '<div class="no-commands">No quick commands available</div>'
@@ -496,7 +915,6 @@ function renderDeviceCard(id, device) {
 function renderDeviceListItem(id, device) {
     const lastSeen = device.last_seen ? new Date(device.last_seen * 1000).toLocaleString() : 'Never';
     const isOnline = device.status === 'online';
-    const capabilities = device.capabilities || [];
     
     return `
         <div class="device-list-item" data-device-id="${id}">
@@ -528,7 +946,7 @@ function renderDeviceListItem(id, device) {
 }
 
 function attachDeviceEventListeners() {
-    // Send Command - открывает панель быстрых команд
+    // Send Command - opens quick commands panel
     document.querySelectorAll('.send-cmd').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -540,23 +958,22 @@ function attachDeviceEventListeners() {
                 return;
             }
             
-            // Закрываем все другие открытые панели
+            // Close all other panels
             document.querySelectorAll('.quick-commands-panel').forEach(panel => {
                 if (panel.id !== `quick-panel-${deviceId}`) {
                     panel.style.display = 'none';
                 }
             });
             
-            // Переключаем текущую панель
+            // Toggle current panel
             const panel = document.getElementById(`quick-panel-${deviceId}`);
             if (panel) {
-                const isVisible = panel.style.display === 'block';
-                panel.style.display = isVisible ? 'none' : 'block';
+                panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
             }
         });
     });
     
-    // JSON Command - открывает модалку с ручным вводом
+    // JSON Command - opens modal
     document.querySelectorAll('.json-cmd').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -582,11 +999,9 @@ function attachDeviceEventListeners() {
             const deviceId = btn.dataset.id;
             const command = btn.dataset.cmd;
             
-            // Закрываем панель
             const panel = document.getElementById(`quick-panel-${deviceId}`);
             if (panel) panel.style.display = 'none';
             
-            // Отправляем команду
             sendCommand(deviceId, command, {});
         });
     });
@@ -604,11 +1019,9 @@ function attachDeviceEventListeners() {
                 return;
             }
             
-            // Закрываем панель
             const panel = document.getElementById(`quick-panel-${deviceId}`);
             if (panel) panel.style.display = 'none';
             
-            // Отправляем команду
             sendCommand(deviceId, command, {});
             if (input) input.value = '';
         });
@@ -649,7 +1062,7 @@ function attachDeviceEventListeners() {
         });
     });
     
-    // Клик вне панели закрывает её
+    // Click outside closes panel
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.quick-commands-panel') && !e.target.closest('.send-cmd')) {
             document.querySelectorAll('.quick-commands-panel').forEach(panel => {
@@ -668,21 +1081,32 @@ function getDeviceIcon(deviceType) {
         'tablet': 'fa-tablet-alt',
         'raspberry': 'fa-microchip',
         'arduino': 'fa-microchip',
-        'smartphone': 'fa-mobile-alt'
+        'smartphone': 'fa-mobile-alt',
+        'router': 'fa-wifi',
+        'switch': 'fa-exchange-alt',
+        'camera': 'fa-video',
+        'speaker': 'fa-music'
     };
     return icons[deviceType?.toLowerCase()] || 'fa-microchip';
 }
 
+// ==================== COMMANDS ====================
+
 function showCommandModal(deviceId) {
-    document.getElementById('modalDeviceId').value = deviceId;
-    document.getElementById('modalCommand').value = '';
-    document.getElementById('modalPayload').value = '{}';
-    document.getElementById('commandModal').style.display = 'block';
+    const modalDeviceId = document.getElementById('modalDeviceId');
+    if (modalDeviceId) modalDeviceId.value = deviceId;
+    const modalCommand = document.getElementById('modalCommand');
+    if (modalCommand) modalCommand.value = '';
+    const modalPayload = document.getElementById('modalPayload');
+    if (modalPayload) modalPayload.value = '{}';
+    const commandModal = document.getElementById('commandModal');
+    if (commandModal) commandModal.style.display = 'block';
 }
 
 function sendCommand(deviceId, command, payload, callback) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
         showToast('Not connected to Core', 'error');
+        if (callback) callback(false);
         return;
     }
     
@@ -701,7 +1125,10 @@ function sendCommand(deviceId, command, payload, callback) {
         error: null
     });
     
-    if (commandHistory.length > 100) commandHistory.pop();
+    // Trim history
+    while (commandHistory.length > settings.historyLimit) {
+        commandHistory.pop();
+    }
     saveStoredData();
     renderHistory();
     
@@ -756,6 +1183,8 @@ function rotateToken() {
     }
 }
 
+// ==================== EXPORT ====================
+
 function exportToCsv() {
     const headers = ['ID', 'Type', 'Status', 'Last Seen', 'Capabilities'];
     const rows = Object.entries(devices).map(([id, d]) => [
@@ -782,6 +1211,8 @@ function exportToCsv() {
     
     showToast('Devices exported to CSV', 'success');
 }
+
+// ==================== HISTORY & LOGS ====================
 
 function renderHistory() {
     if (!historyList) return;
@@ -829,12 +1260,9 @@ function addLogEntry(category, message) {
     
     if (eventLogs.length > 200) eventLogs.pop();
     renderLogs();
-    
-    // Auto-scroll logs container
-    if (logsContainer && currentView === 'logs') {
-        logsContainer.scrollTop = 0;
-    }
 }
+
+// ==================== NOTIFICATIONS ====================
 
 function showToast(message, type = 'info') {
     const container = document.getElementById('toastContainer');
@@ -856,6 +1284,7 @@ function showToast(message, type = 'info') {
 }
 
 function checkAndNotifyPending() {
+    if (!settings.notifyPendingDevice) return;
     if (Notification.permission !== 'granted') return;
     
     Object.entries(devices).forEach(([id, device]) => {
@@ -888,8 +1317,10 @@ function requestNotificationPermission() {
     }
 }
 
+// ==================== STORAGE ====================
+
 function saveStoredData() {
-    localStorage.setItem('commandHistory', JSON.stringify(commandHistory.slice(0, 50)));
+    localStorage.setItem('commandHistory', JSON.stringify(commandHistory.slice(0, settings.historyLimit)));
 }
 
 function loadStoredData() {
