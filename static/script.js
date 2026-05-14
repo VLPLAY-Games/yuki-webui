@@ -435,81 +435,203 @@ function renderDevices() {
 function renderDeviceCard(id, device) {
     const lastSeen = device.last_seen ? new Date(device.last_seen * 1000).toLocaleString() : 'Never';
     const capabilities = device.capabilities || [];
-    const quickCommands = capabilities.slice(0, 4);
+    const isOnline = device.status === 'online';
     
     return `
         <div class="device-card ${device.status}" data-device-id="${id}">
             <div class="card-header">
                 <div class="device-icon">
-                    <i class="fas fa-microchip"></i>
+                    <i class="fas ${getDeviceIcon(device.type)}"></i>
                 </div>
                 <span class="status-badge ${device.status}">${device.status}</span>
             </div>
             <div class="device-id"><code>${escapeHtml(id)}</code></div>
             <div class="device-type">${escapeHtml(device.type)}</div>
             <div class="device-last-seen"><i class="fas fa-clock"></i> Last seen: ${lastSeen}</div>
+            
             <div class="card-actions">
-                <button class="btn-primary send-cmd" data-id="${id}">Send Command</button>
-                <button class="btn-secondary json-cmd" data-id="${id}">JSON</button>
-                ${device.status === 'online' ? `<button class="btn-secondary disconnect-device" data-id="${id}">Disconnect</button>` : ''}
-                <button class="btn-danger remove-device" data-id="${id}">Remove</button>
+                <button class="btn-primary send-cmd" data-id="${id}" ${!isOnline ? 'disabled' : ''}>
+                    <i class="fas fa-paper-plane"></i> Send Command
+                </button>
+                <button class="btn-secondary json-cmd" data-id="${id}">
+                    <i class="fas fa-code"></i> JSON
+                </button>
+                ${isOnline ? `
+                    <button class="btn-secondary disconnect-device" data-id="${id}">
+                        <i class="fas fa-plug"></i> Disconnect
+                    </button>
+                ` : ''}
+                <button class="btn-danger remove-device" data-id="${id}">
+                    <i class="fas fa-trash"></i> Remove
+                </button>
             </div>
-            ${quickCommands.length > 0 ? `
-                <div class="quick-commands">
-                    ${quickCommands.map(cmd => `<button class="quick-cmd" data-id="${id}" data-cmd="${cmd}">${cmd}</button>`).join('')}
+            
+            <!-- Панель быстрых команд (скрыта по умолчанию) -->
+            <div class="quick-commands-panel" id="quick-panel-${id}" style="display: none;">
+                <div class="quick-commands-header">
+                    <span><i class="fas fa-bolt"></i> Quick Commands</span>
+                    <button class="close-quick-panel" data-id="${id}">&times;</button>
                 </div>
-            ` : ''}
+                <div class="quick-commands-grid">
+                    ${capabilities.length > 0 ? 
+                        capabilities.map(cmd => `
+                            <button class="quick-cmd-btn" data-id="${id}" data-cmd="${cmd}">
+                                <i class="fas fa-terminal"></i> ${cmd}
+                            </button>
+                        `).join('') : 
+                        '<div class="no-commands">No quick commands available</div>'
+                    }
+                </div>
+                <div class="custom-command-input">
+                    <input type="text" placeholder="Custom command..." id="custom-cmd-${id}" class="custom-cmd-input">
+                    <button class="send-custom-cmd" data-id="${id}">
+                        <i class="fas fa-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
         </div>
     `;
 }
 
 function renderDeviceListItem(id, device) {
     const lastSeen = device.last_seen ? new Date(device.last_seen * 1000).toLocaleString() : 'Never';
+    const isOnline = device.status === 'online';
+    const capabilities = device.capabilities || [];
     
     return `
         <div class="device-list-item" data-device-id="${id}">
-            <div><strong>${escapeHtml(id)}</strong><br><span style="font-size:0.75rem;color:var(--text-muted)">${escapeHtml(device.type)}</span></div>
+            <div>
+                <strong>${escapeHtml(id)}</strong>
+                <br>
+                <span style="font-size:0.75rem;color:var(--text-muted)">${escapeHtml(device.type)}</span>
+            </div>
             <div><span class="status-badge ${device.status}">${device.status}</span></div>
             <div style="font-size:0.75rem">${lastSeen}</div>
             <div>
-                <button class="btn-primary send-cmd small" data-id="${id}">Command</button>
-                <button class="btn-secondary disconnect-device small" data-id="${id}">Disconnect</button>
-                <button class="btn-danger remove-device small" data-id="${id}">Remove</button>
+                <button class="btn-primary send-cmd small" data-id="${id}" ${!isOnline ? 'disabled' : ''}>
+                    <i class="fas fa-paper-plane"></i> Command
+                </button>
+                <button class="btn-secondary json-cmd small" data-id="${id}">
+                    <i class="fas fa-code"></i> JSON
+                </button>
+                ${isOnline ? `
+                    <button class="btn-secondary disconnect-device small" data-id="${id}">
+                        <i class="fas fa-plug"></i>
+                    </button>
+                ` : ''}
+                <button class="btn-danger remove-device small" data-id="${id}">
+                    <i class="fas fa-trash"></i>
+                </button>
             </div>
         </div>
     `;
 }
 
 function attachDeviceEventListeners() {
+    // Send Command - открывает панель быстрых команд
     document.querySelectorAll('.send-cmd').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             const deviceId = btn.dataset.id;
             const device = devices[deviceId];
-            if (device?.status === 'online') {
-                showCommandModal(deviceId);
-            } else {
+            
+            if (!device || device.status !== 'online') {
                 showToast('Device is offline', 'warning');
+                return;
+            }
+            
+            // Закрываем все другие открытые панели
+            document.querySelectorAll('.quick-commands-panel').forEach(panel => {
+                if (panel.id !== `quick-panel-${deviceId}`) {
+                    panel.style.display = 'none';
+                }
+            });
+            
+            // Переключаем текущую панель
+            const panel = document.getElementById(`quick-panel-${deviceId}`);
+            if (panel) {
+                const isVisible = panel.style.display === 'block';
+                panel.style.display = isVisible ? 'none' : 'block';
             }
         });
     });
     
+    // JSON Command - открывает модалку с ручным вводом
     document.querySelectorAll('.json-cmd').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            showCommandModal(btn.dataset.id);
+            const deviceId = btn.dataset.id;
+            showCommandModal(deviceId);
         });
     });
     
-    document.querySelectorAll('.quick-cmd').forEach(btn => {
+    // Close quick panel buttons
+    document.querySelectorAll('.close-quick-panel').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const deviceId = btn.dataset.id;
+            const panel = document.getElementById(`quick-panel-${deviceId}`);
+            if (panel) panel.style.display = 'none';
+        });
+    });
+    
+    // Quick command buttons
+    document.querySelectorAll('.quick-cmd-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             const deviceId = btn.dataset.id;
             const command = btn.dataset.cmd;
+            
+            // Закрываем панель
+            const panel = document.getElementById(`quick-panel-${deviceId}`);
+            if (panel) panel.style.display = 'none';
+            
+            // Отправляем команду
             sendCommand(deviceId, command, {});
         });
     });
     
+    // Send custom command
+    document.querySelectorAll('.send-custom-cmd').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const deviceId = btn.dataset.id;
+            const input = document.getElementById(`custom-cmd-${deviceId}`);
+            const command = input?.value.trim();
+            
+            if (!command) {
+                showToast('Enter a command name', 'warning');
+                return;
+            }
+            
+            // Закрываем панель
+            const panel = document.getElementById(`quick-panel-${deviceId}`);
+            if (panel) panel.style.display = 'none';
+            
+            // Отправляем команду
+            sendCommand(deviceId, command, {});
+            if (input) input.value = '';
+        });
+    });
+    
+    // Enter key in custom command input
+    document.querySelectorAll('.custom-cmd-input').forEach(input => {
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.stopPropagation();
+                const deviceId = input.id.replace('custom-cmd-', '');
+                const command = input.value.trim();
+                if (command) {
+                    const panel = document.getElementById(`quick-panel-${deviceId}`);
+                    if (panel) panel.style.display = 'none';
+                    sendCommand(deviceId, command, {});
+                    input.value = '';
+                }
+            }
+        });
+    });
+    
+    // Disconnect device
     document.querySelectorAll('.disconnect-device').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -517,6 +639,7 @@ function attachDeviceEventListeners() {
         });
     });
     
+    // Remove device
     document.querySelectorAll('.remove-device').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -525,6 +648,29 @@ function attachDeviceEventListeners() {
             }
         });
     });
+    
+    // Клик вне панели закрывает её
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.quick-commands-panel') && !e.target.closest('.send-cmd')) {
+            document.querySelectorAll('.quick-commands-panel').forEach(panel => {
+                panel.style.display = 'none';
+            });
+        }
+    });
+}
+
+function getDeviceIcon(deviceType) {
+    const icons = {
+        'pc': 'fa-desktop',
+        'laptop': 'fa-laptop',
+        'server': 'fa-server',
+        'phone': 'fa-mobile-alt',
+        'tablet': 'fa-tablet-alt',
+        'raspberry': 'fa-microchip',
+        'arduino': 'fa-microchip',
+        'smartphone': 'fa-mobile-alt'
+    };
+    return icons[deviceType?.toLowerCase()] || 'fa-microchip';
 }
 
 function showCommandModal(deviceId) {

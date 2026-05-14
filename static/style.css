@@ -923,3 +923,130 @@ input:checked + .slider:before {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--accent-primary);
 }
+
+/* Quick Commands Panel */
+.quick-commands-panel {
+    margin-top: 15px;
+    padding: 12px;
+    background: var(--bg-tertiary);
+    border-radius: 12px;
+    animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.quick-commands-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--accent-primary);
+}
+
+.close-quick-panel {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    transition: var(--transition);
+}
+
+.close-quick-panel:hover {
+    background: var(--border-color);
+    color: var(--text-primary);
+}
+
+.quick-commands-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.quick-cmd-btn {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: var(--transition);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.quick-cmd-btn:hover {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    transform: translateY(-1px);
+}
+
+.no-commands {
+    text-align: center;
+    padding: 12px;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.custom-command-input {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.custom-cmd-input {
+    flex: 1;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 8px 12px;
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    font-family: monospace;
+}
+
+.custom-cmd-input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+.send-custom-cmd {
+    background: var(--accent-primary);
+    border: none;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.send-custom-cmd:hover {
+    background: var(--accent-hover);
+}
+
+/* Disabled button state */
+.send-cmd:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
