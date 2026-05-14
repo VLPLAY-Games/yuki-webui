@@ -1,5 +1,7 @@
 import os
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+import json
+import time
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'yuki-dev-secret-key-change-in-production')
@@ -17,6 +19,31 @@ if not WEBUI_USER or not WEBUI_PASS:
                 WEBUI_PASS = lines[1].strip()
 
 AUTH_ENABLED = bool(WEBUI_USER and WEBUI_PASS)
+
+# Хранилище метрик (в реальном приложении используйте БД)
+metrics_store = {}
+MAX_METRICS_POINTS = 50
+
+def save_metric(device_id, metric_type, value):
+    """Сохраняет метрику устройства"""
+    key = f"{device_id}_{metric_type}"
+    if key not in metrics_store:
+        metrics_store[key] = []
+    metrics_store[key].append({
+        "timestamp": time.time(),
+        "value": value
+    })
+    # Ограничиваем количество точек
+    if len(metrics_store[key]) > MAX_METRICS_POINTS:
+        metrics_store[key] = metrics_store[key][-MAX_METRICS_POINTS:]
+
+def get_metrics(device_id, metric_type, hours=1):
+    """Возвращает метрики за последние N часов"""
+    key = f"{device_id}_{metric_type}"
+    if key not in metrics_store:
+        return []
+    cutoff = time.time() - (hours * 3600)
+    return [m for m in metrics_store[key] if m["timestamp"] > cutoff]
 
 def login_required(f):
     from functools import wraps
@@ -55,6 +82,18 @@ def logout():
 @login_required
 def index():
     return render_template('index.html', auth_enabled=AUTH_ENABLED)
+
+# API для метрик
+@app.route('/api/metrics/<device_id>')
+def get_device_metrics(device_id):
+    metric_type = request.args.get('type', 'cpu')
+    hours = int(request.args.get('hours', 1))
+    data = get_metrics(device_id, metric_type, hours)
+    return jsonify({
+        "device_id": device_id,
+        "metric_type": metric_type,
+        "data": data
+    })
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

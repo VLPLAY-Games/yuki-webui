@@ -1,142 +1,253 @@
-// script.js
+// script.js - Modern Dashboard
+
+// State
 let ws = null;
 let reconnectTimer = null;
-const RECONNECT_DELAY = 3000;
 let devices = {};
+let currentView = 'dashboard';
+let currentFilter = 'all';
+let currentViewMode = 'grid';
+let currentTheme = localStorage.getItem('theme') || 'dark';
 let pendingConfirmation = null;
 let pendingAuthRequest = null;
-let expandedQuickCommandsId = null;
-const notifiedPendingIds = new Set();
-
-// Состояние UI
-let currentGroup = 'all';
-let searchQuery = '';
-let sortColumn = 'id';
-let sortDirection = 'asc'; // 'asc' или 'desc'
-
-// История команд
 let commandHistory = [];
-const MAX_HISTORY = 100;
-// Карта ожидающих результатов команд (по ID сообщения)
-const pendingCommands = new Map();
+let eventLogs = [];
+let notifiedPendingIds = new Set();
 
-// Настройки удаления (храним в localStorage)
-let skipDeleteConfirm = localStorage.getItem('skipDeleteConfirm') === 'true';
+// DOM Elements
+let sidebar, devicesContainer, historyList, logsContainer, searchInput;
 
-// DOM элементы
-const statusIndicator = document.getElementById('connection-status');
-const statusText = document.getElementById('status-text');
-const devicesTbody = document.querySelector('#devices-table tbody');
-const groupTabs = document.getElementById('group-tabs');
-const logList = document.getElementById('log-list');
-const historyList = document.getElementById('history-list');
-const searchInput = document.getElementById('search-input');
-const clearSearchBtn = document.getElementById('clear-search');
-const exportCsvBtn = document.getElementById('export-csv');
-const commandModal = document.getElementById('command-modal');
-const confirmModal = document.getElementById('confirm-modal');
-const authModal = document.getElementById('auth-modal');
-const deleteModal = document.getElementById('delete-modal');
-const modalDeviceId = document.getElementById('modal-device-id');
-const modalCommand = document.getElementById('modal-command');
-const modalPayload = document.getElementById('modal-payload');
-const confirmText = document.getElementById('confirm-text');
-const authText = document.getElementById('auth-text');
-const deleteDeviceIdSpan = document.getElementById('delete-device-id');
-const dontAskDeleteCheck = document.getElementById('dont-ask-delete');
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    // DOM references
+    sidebar = document.getElementById('sidebar');
+    devicesContainer = document.getElementById('devicesContainer');
+    historyList = document.getElementById('historyList');
+    logsContainer = document.getElementById('logsContainer');
+    searchInput = document.getElementById('searchInput');
+    
+    // Initialize theme
+    initTheme();
+    
+    // Event listeners
+    initEventListeners();
+    
+    // Connect WebSocket
+    connectWebSocket();
+    
+    // Load saved history from localStorage
+    loadStoredData();
+    
+    // Start periodic updates
+    setInterval(updateDashboardStats, 1000);
+});
 
-let deviceToDelete = null;
-
-// === Инициализация ===
-function requestNotificationPermission() {
-    if (!('Notification' in window)) {
-        addLogEntry('warning', 'This browser does not support desktop notifications');
-        return;
-    }
-    if (Notification.permission === 'granted') {
-        addLogEntry('system', 'Notifications already enabled');
-        updateNotificationButtonState();
-    } else if (Notification.permission !== 'denied') {
-        Notification.requestPermission().then(permission => {
-            if (permission === 'granted') {
-                addLogEntry('system', 'Notification permission granted');
-                updateNotificationButtonState();
-            } else {
-                addLogEntry('warning', 'Notification permission denied');
-            }
+function initTheme() {
+    document.documentElement.setAttribute('data-theme', currentTheme);
+    const themeToggle = document.getElementById('themeToggle');
+    if (themeToggle) {
+        themeToggle.checked = currentTheme === 'light';
+        themeToggle.addEventListener('change', (e) => {
+            currentTheme = e.target.checked ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', currentTheme);
+            localStorage.setItem('theme', currentTheme);
+            showToast(`Theme changed to ${currentTheme}`, 'success');
         });
     }
 }
 
-function updateNotificationButtonState() {
-    const btn = document.getElementById('enable-notifications');
-    if (btn) {
-        if (Notification.permission === 'granted') {
-            btn.textContent = 'Notifications Enabled';
-            btn.disabled = true;
-            btn.style.opacity = '0.7';
-        } else {
-            btn.textContent = 'Enable Notifications';
-            btn.disabled = false;
-            btn.style.opacity = '1';
-        }
-    }
-}
-
-function showPendingNotification(deviceId, deviceType) {
-    if (Notification.permission !== 'granted') return;
-    if (notifiedPendingIds.has(deviceId)) return;
-    const title = 'New device pending authorization';
-    const options = {
-        body: `Device ${deviceId} (${deviceType}) is waiting for approval.`,
-        icon: '/static/favicon.ico',
-        tag: `pending-${deviceId}`,
-        requireInteraction: true,
-    };
-    const notification = new Notification(title, options);
-    notification.onclick = () => {
-        window.focus();
-        const pendingTab = document.querySelector('.tab[data-group="pending"]');
-        if (pendingTab) pendingTab.click();
-        notification.close();
-    };
-    notifiedPendingIds.add(deviceId);
-    addLogEntry('system', `Notification sent for pending device ${deviceId}`);
-}
-
-function checkAndNotifyPending() {
-    if (!devices) return;
-    Object.entries(devices).forEach(([id, device]) => {
-        if (device.status === 'pending' && !notifiedPendingIds.has(id)) {
-            showPendingNotification(id, device.type);
+function initEventListeners() {
+    // Sidebar toggle
+    document.getElementById('sidebarToggle')?.addEventListener('click', () => {
+        sidebar.classList.toggle('collapsed');
+    });
+    
+    // Navigation
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const view = item.dataset.view;
+            switchView(view);
+            
+            // Update active state
+            document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+            item.classList.add('active');
+        });
+    });
+    
+    // Filter chips
+    document.querySelectorAll('.filter-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            currentFilter = chip.dataset.filter;
+            document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            renderDevices();
+        });
+    });
+    
+    // View toggle
+    document.querySelectorAll('.view-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            currentViewMode = btn.dataset.view;
+            document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            renderDevices();
+        });
+    });
+    
+    // Search
+    searchInput?.addEventListener('input', () => renderDevices());
+    
+    // Buttons
+    document.getElementById('exportCsvBtn')?.addEventListener('click', exportToCsv);
+    document.getElementById('rotateTokenBtn')?.addEventListener('click', rotateToken);
+    document.getElementById('enableNotificationsBtn')?.addEventListener('click', requestNotificationPermission);
+    document.getElementById('refreshBtn')?.addEventListener('click', () => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'get_devices' }));
+            showToast('Refreshing devices...', 'info');
         }
     });
+    document.getElementById('clearHistoryBtn')?.addEventListener('click', () => {
+        commandHistory = [];
+        saveStoredData();
+        renderHistory();
+        showToast('Command history cleared', 'success');
+    });
+    document.getElementById('clearLogsBtn')?.addEventListener('click', () => {
+        eventLogs = [];
+        renderLogs();
+        showToast('Event logs cleared', 'success');
+    });
+    document.getElementById('copyTokenBtn')?.addEventListener('click', () => {
+        const tokenInfo = document.getElementById('tokenInfo')?.innerText;
+        if (tokenInfo) {
+            navigator.clipboard.writeText(tokenInfo);
+            showToast('Token info copied to clipboard', 'success');
+        }
+    });
+    
+    // Modal handlers
+    initModalHandlers();
 }
 
-// === WebSocket ===
+function switchView(view) {
+    currentView = view;
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById(`${view}View`)?.classList.add('active');
+    
+    if (view === 'devices') renderDevices();
+    if (view === 'history') renderHistory();
+    if (view === 'logs') renderLogs();
+}
+
+function initModalHandlers() {
+    // Command modal
+    const commandModal = document.getElementById('commandModal');
+    const confirmModal = document.getElementById('confirmModal');
+    const authModal = document.getElementById('authModal');
+    
+    document.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
+        btn.addEventListener('click', () => {
+            commandModal.style.display = 'none';
+            confirmModal.style.display = 'none';
+            authModal.style.display = 'none';
+        });
+    });
+    
+    document.getElementById('sendCommandBtn')?.addEventListener('click', () => {
+        const deviceId = document.getElementById('modalDeviceId').value;
+        const command = document.getElementById('modalCommand').value.trim();
+        let payload = {};
+        try {
+            payload = JSON.parse(document.getElementById('modalPayload').value);
+        } catch (e) {
+            showToast('Invalid JSON payload', 'error');
+            return;
+        }
+        if (!command) {
+            showToast('Command is required', 'error');
+            return;
+        }
+        sendCommand(deviceId, command, payload);
+        commandModal.style.display = 'none';
+    });
+    
+    document.getElementById('confirmYesBtn')?.addEventListener('click', () => {
+        if (pendingConfirmation) {
+            ws.send(JSON.stringify({
+                type: 'confirm_response',
+                id: pendingConfirmation.id,
+                device_id: pendingConfirmation.device_id,
+                command: pendingConfirmation.command,
+                params: pendingConfirmation.params,
+                approved: true
+            }));
+            showToast(`Command "${pendingConfirmation.command}" confirmed`, 'warning');
+        }
+        confirmModal.style.display = 'none';
+        pendingConfirmation = null;
+    });
+    
+    document.getElementById('confirmNoBtn')?.addEventListener('click', () => {
+        confirmModal.style.display = 'none';
+        pendingConfirmation = null;
+    });
+    
+    document.getElementById('authApproveBtn')?.addEventListener('click', () => {
+        if (pendingAuthRequest) {
+            approveDevice(pendingAuthRequest.device_id, true);
+        }
+        authModal.style.display = 'none';
+    });
+    
+    document.getElementById('authDenyBtn')?.addEventListener('click', () => {
+        if (pendingAuthRequest) {
+            approveDevice(pendingAuthRequest.device_id, false);
+        }
+        authModal.style.display = 'none';
+    });
+    
+    window.onclick = (e) => {
+        if (e.target === commandModal) commandModal.style.display = 'none';
+        if (e.target === confirmModal) confirmModal.style.display = 'none';
+        if (e.target === authModal) authModal.style.display = 'none';
+    };
+}
+
+// WebSocket
 function connectWebSocket() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-    ws = new WebSocket('ws://localhost:8000/webui');
+    
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${protocol}//${window.location.hostname}:8000/webui`);
+    
     ws.onopen = () => {
         updateConnectionStatus(true);
         addLogEntry('system', 'Connected to Core');
         if (reconnectTimer) clearTimeout(reconnectTimer);
         ws.send(JSON.stringify({ type: 'get_token_info' }));
+        ws.send(JSON.stringify({ type: 'get_devices' }));
     };
+    
     ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
             handleMessage(data);
         } catch (e) {
-            addLogEntry('error', 'Malformed message from Core');
+            console.error('Failed to parse message', e);
         }
     };
+    
     ws.onclose = () => {
         updateConnectionStatus(false);
-        addLogEntry('system', 'Disconnected');
+        addLogEntry('system', 'Disconnected from Core');
         scheduleReconnect();
     };
-    ws.onerror = () => addLogEntry('error', 'WebSocket error');
+    
+    ws.onerror = (error) => {
+        console.error('WebSocket error', error);
+        addLogEntry('error', 'WebSocket connection error');
+    };
 }
 
 function scheduleReconnect() {
@@ -144,60 +255,106 @@ function scheduleReconnect() {
     reconnectTimer = setTimeout(() => {
         addLogEntry('system', 'Reconnecting...');
         connectWebSocket();
-    }, RECONNECT_DELAY);
+    }, 3000);
 }
 
 function updateConnectionStatus(connected) {
-    statusIndicator.classList.toggle('connected', connected);
-    statusIndicator.classList.toggle('disconnected', !connected);
-    statusText.textContent = connected ? 'Connected' : 'Disconnected';
+    const statusEl = document.getElementById('connectionStatus');
+    if (statusEl) {
+        statusEl.classList.toggle('connected', connected);
+        statusEl.classList.toggle('disconnected', !connected);
+        statusEl.querySelector('span').textContent = connected ? 'Connected' : 'Disconnected';
+    }
 }
 
 function handleMessage(data) {
-    if (data.type === 'devices_list' || data.type === 'devices_update') {
-        if (data.payload && data.payload.devices) {
-            devices = data.payload.devices;
-            renderGroups();
-            renderTable();
-            checkAndNotifyPending();
-        }
-    } else if (data.type === 'confirm_command') {
-        const { device_id, command, params } = data.payload;
-        pendingConfirmation = { id: data.id, device_id, command, params };
-        confirmText.textContent = `Execute "${command}" on ${device_id}?`;
-        confirmModal.style.display = 'block';
-    } else if (data.type === 'device_auth_request') {
-        const { device_id, device_type, capabilities } = data.payload;
-        pendingAuthRequest = { id: data.id, device_id, device_type, capabilities };
-        document.getElementById('auth-device-id').textContent = device_id;
-        document.getElementById('auth-device-type').textContent = device_type;
-        const capsContainer = document.getElementById('auth-capabilities-list');
-        capsContainer.innerHTML = capabilities.map(cap => `<span class="capability-chip">${cap}</span>`).join('');
-        authModal.style.display = 'block';
-    } else if (data.type === 'token_info') {
-        updateTokenInfo(data.payload);
-    } else if (data.type === 'token_rotated') {
-        addLogEntry('system', 'Token rotated successfully');
-        ws.send(JSON.stringify({ type: 'get_token_info' }));
-    } else if (data.type === 'command_result') {
-        const { id, device_id, payload } = data;
-        const pending = pendingCommands.get(id);
-        if (pending) {
-            const success = payload.success;
-            const error = payload.error;
-            updateHistoryEntry(pending.historyId, device_id, pending.command, pending.params, success, error);
-            if (pending.callback) pending.callback(success, error);
-            pendingCommands.delete(id);
-        }
+    switch (data.type) {
+        case 'devices_list':
+        case 'devices_update':
+            if (data.payload?.devices) {
+                devices = data.payload.devices;
+                updateDashboardStats();
+                renderDevices();
+                checkAndNotifyPending();
+            }
+            break;
+            
+        case 'confirm_command':
+            pendingConfirmation = {
+                id: data.id,
+                device_id: data.payload.device_id,
+                command: data.payload.command,
+                params: data.payload.params
+            };
+            document.getElementById('confirmText').textContent = 
+                `Execute "${data.payload.command}" on ${data.payload.device_id}?`;
+            document.getElementById('confirmModal').style.display = 'block';
+            break;
+            
+        case 'device_auth_request':
+            pendingAuthRequest = {
+                id: data.id,
+                device_id: data.payload.device_id,
+                device_type: data.payload.device_type,
+                capabilities: data.payload.capabilities
+            };
+            document.getElementById('authDeviceId').textContent = data.payload.device_id;
+            document.getElementById('authDeviceType').textContent = data.payload.device_type;
+            const capsContainer = document.getElementById('authCapabilitiesList');
+            capsContainer.innerHTML = data.payload.capabilities.map(cap => 
+                `<span class="capability-chip">${cap}</span>`
+            ).join('');
+            document.getElementById('authModal').style.display = 'block';
+            break;
+            
+        case 'token_info':
+            updateTokenInfo(data.payload);
+            break;
+            
+        case 'command_result':
+            handleCommandResult(data);
+            break;
+            
+        case 'status':
+            if (data.payload?.device_id && devices[data.payload.device_id]) {
+                devices[data.payload.device_id].status = data.payload.status;
+                updateDashboardStats();
+                renderDevices();
+            }
+            break;
+    }
+}
+
+function handleCommandResult(data) {
+    const { id, device_id, payload } = data;
+    const success = payload.success;
+    const error = payload.error;
+    
+    // Update history
+    const historyEntry = commandHistory.find(h => h.id === id);
+    if (historyEntry) {
+        historyEntry.status = success ? 'success' : 'error';
+        historyEntry.error = error;
+        saveStoredData();
+        renderHistory();
+    }
+    
+    if (success) {
+        showToast(`Command executed successfully on ${device_id}`, 'success');
+        addLogEntry('command_result', `✅ Command ${id} succeeded on ${device_id}`);
+    } else {
+        showToast(`Command failed on ${device_id}: ${error}`, 'error');
+        addLogEntry('command_result', `❌ Command ${id} failed on ${device_id}: ${error}`);
     }
 }
 
 function updateTokenInfo(payload) {
-    const infoDiv = document.getElementById('token-info');
+    const infoDiv = document.getElementById('tokenInfo');
     if (!infoDiv) return;
+    
     const created = payload.created_at ? new Date(payload.created_at * 1000).toLocaleString() : 'N/A';
     const expiresIn = payload.expires_in ? formatTime(payload.expires_in) : 'Never';
-    infoDiv.innerHTML = `Token created: ${created}<br>Expires in: ${expiresIn}`;
+    infoDiv.innerHTML = `<strong>Created:</strong> ${created}<br><strong>Expires:</strong> ${expiresIn}`;
 }
 
 function formatTime(seconds) {
@@ -208,518 +365,403 @@ function formatTime(seconds) {
     return `${h}h ${m}m ${s}s`;
 }
 
-// === Группы и сортировка/фильтрация ===
-function renderGroups() {
-    const groups = ['all', 'online', 'pending', 'offline'];
-    groupTabs.innerHTML = groups.map(g =>
-        `<button class="tab ${currentGroup === g ? 'active' : ''}" data-group="${g}">${g.charAt(0).toUpperCase() + g.slice(1)}</button>`
-    ).join('');
-    document.querySelectorAll('.tab').forEach(btn => {
-        btn.addEventListener('click', () => {
-            currentGroup = btn.dataset.group;
-            renderGroups();
-            renderTable();
-        });
-    });
+function updateDashboardStats() {
+    const total = Object.keys(devices).length;
+    const online = Object.values(devices).filter(d => d.status === 'online').length;
+    const pending = Object.values(devices).filter(d => d.status === 'pending').length;
+    const offline = Object.values(devices).filter(d => d.status === 'offline').length;
+    
+    document.getElementById('totalDevices').textContent = total;
+    document.getElementById('onlineDevices').textContent = online;
+    document.getElementById('pendingDevices').textContent = pending;
+    document.getElementById('offlineDevices').textContent = offline;
+    document.getElementById('deviceCountBadge').textContent = total;
+    
+    // Recent commands preview
+    const recentContainer = document.getElementById('recentCommands');
+    if (recentContainer && commandHistory.length > 0) {
+        const recent = commandHistory.slice(0, 5);
+        recentContainer.innerHTML = recent.map(cmd => `
+            <div class="history-item" style="padding: 10px;">
+                <span class="history-time">${new Date(cmd.timestamp).toLocaleTimeString()}</span>
+                <span class="history-status ${cmd.status}">${cmd.status}</span>
+                <span class="history-device">${cmd.deviceId}</span>
+                <span class="history-command">${cmd.command}</span>
+            </div>
+        `).join('');
+    } else if (recentContainer) {
+        recentContainer.innerHTML = '<div class="loading-placeholder">No recent commands</div>';
+    }
 }
 
-function getFilteredAndSortedDevices() {
-    let entries = Object.entries(devices).filter(([id, d]) => {
-        // Группа
-        if (currentGroup === 'online') return d.status === 'online';
-        if (currentGroup === 'pending') return d.status === 'pending';
-        if (currentGroup === 'offline') return d.status === 'offline';
-        return true;
-    }).filter(([id, d]) => {
-        // Поиск
-        if (!searchQuery) return true;
-        const query = searchQuery.toLowerCase();
-        return id.toLowerCase().includes(query) || d.type.toLowerCase().includes(query);
-    });
-
-    // Сортировка
-    entries.sort((a, b) => {
-        let valA, valB;
-        const [idA, devA] = a;
-        const [idB, devB] = b;
-        switch (sortColumn) {
-            case 'id':
-                valA = idA.toLowerCase();
-                valB = idB.toLowerCase();
-                break;
-            case 'type':
-                valA = devA.type.toLowerCase();
-                valB = devB.type.toLowerCase();
-                break;
-            case 'status':
-                valA = devA.status;
-                valB = devB.status;
-                break;
-            case 'last_seen':
-                valA = devA.last_seen || 0;
-                valB = devB.last_seen || 0;
-                break;
-            default:
-                return 0;
-        }
-        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-        return 0;
-    });
-    return entries;
-}
-
-function renderTable() {
-    expandedQuickCommandsId = null;
-    const filtered = getFilteredAndSortedDevices();
-    if (filtered.length === 0) {
-        devicesTbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">No devices</td></tr>`;
+function renderDevices() {
+    if (!devicesContainer) return;
+    
+    let filteredDevices = Object.entries(devices);
+    
+    // Filter by status
+    if (currentFilter !== 'all') {
+        filteredDevices = filteredDevices.filter(([_, d]) => d.status === currentFilter);
+    }
+    
+    // Filter by search
+    const searchTerm = searchInput?.value.toLowerCase() || '';
+    if (searchTerm) {
+        filteredDevices = filteredDevices.filter(([id, d]) => 
+            id.toLowerCase().includes(searchTerm) || 
+            d.type.toLowerCase().includes(searchTerm)
+        );
+    }
+    
+    if (filteredDevices.length === 0) {
+        devicesContainer.innerHTML = '<div class="loading-placeholder">No devices found</div>';
         return;
     }
-    devicesTbody.innerHTML = filtered.map(([id, d]) => {
-        const statusClass = `status-${d.status}`;
-        const lastSeen = d.last_seen ? new Date(d.last_seen * 1000).toLocaleTimeString() : '—';
-        const isOnline = d.status === 'online';
-        const isPending = d.status === 'pending';
-        let actionsHtml = '';
-        if (isPending) {
-            actionsHtml = `<button class="approve-device" data-id="${id}">Approve</button>
-                           <button class="deny-device" data-id="${id}">Deny</button>`;
-        } else if (isOnline) {
-            actionsHtml = `<button class="send-cmd" data-id="${id}">Send Command</button>
-                           <button class="json-cmd" data-id="${id}">JSON</button>
-                           <button class="disconnect-device" data-id="${id}">Disconnect</button>
-                           <button class="reconnect-device" data-id="${id}">Reconnect</button>
-                           <button class="remove-device" data-id="${id}">Remove</button>`;
-        } else {
-            actionsHtml = `<button class="remove-device" data-id="${id}">Remove</button>`;
-        }
-        return `
-            <tr data-device-id="${id}">
-                <td><code>${id}</code></td>
-                <td>${d.type}</td>
-                <td><span class="status-badge ${statusClass}">${d.status}</span></td>
-                <td>${lastSeen}</td>
-                <td>${actionsHtml}</td>
-            </tr>
-        `;
-    }).join('');
-
-    // Обработчики кнопок
-    document.querySelectorAll('.send-cmd').forEach(btn => {
-        btn.addEventListener('click', () => toggleQuickCommandsRow(btn.dataset.id));
-    });
-    document.querySelectorAll('.json-cmd').forEach(btn => {
-        btn.addEventListener('click', () => {
-            modalDeviceId.value = btn.dataset.id;
-            modalCommand.value = '';
-            modalPayload.value = '{}';
-            commandModal.style.display = 'block';
-        });
-    });
-    document.querySelectorAll('.approve-device').forEach(btn => {
-        btn.addEventListener('click', () => approveDevice(btn.dataset.id, true));
-    });
-    document.querySelectorAll('.deny-device').forEach(btn => {
-        btn.addEventListener('click', () => approveDevice(btn.dataset.id, false));
-    });
-    document.querySelectorAll('.disconnect-device').forEach(btn => {
-        btn.addEventListener('click', () => disconnectDevice(btn.dataset.id));
-    });
-    document.querySelectorAll('.reconnect-device').forEach(btn => {
-        btn.addEventListener('click', () => reconnectDevice(btn.dataset.id));
-    });
-    document.querySelectorAll('.remove-device').forEach(btn => {
-        btn.addEventListener('click', () => promptDeleteDevice(btn.dataset.id));
-    });
-
-    updateSortIndicators();
-}
-
-function updateSortIndicators() {
-    document.querySelectorAll('th.sortable').forEach(th => {
-        th.classList.remove('sort-asc', 'sort-desc');
-        if (th.dataset.sort === sortColumn) {
-            th.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
-        }
-    });
-}
-
-// === Быстрые команды ===
-function toggleQuickCommandsRow(deviceId) {
-    const device = devices[deviceId];
-    if (!device || device.status !== 'online') {
-        addLogEntry('warning', `Cannot send commands to offline device ${deviceId}`);
-        return;
-    }
-    if (expandedQuickCommandsId === deviceId) {
-        removeQuickCommandsRow();
-        expandedQuickCommandsId = null;
-        return;
-    }
-    removeQuickCommandsRow();
-    const deviceRow = document.querySelector(`tr[data-device-id="${deviceId}"]`);
-    if (!deviceRow) return;
-    const quickRow = document.createElement('tr');
-    quickRow.className = 'quick-commands-row';
-    quickRow.id = `quick-row-${deviceId}`;
-    const td = document.createElement('td');
-    td.colSpan = 5;
-    const container = document.createElement('div');
-    container.className = 'quick-commands-container';
-    const capabilities = device.capabilities || [];
-    if (capabilities.length === 0) {
-        const span = document.createElement('span');
-        span.style.color = 'var(--text-color)';
-        span.style.opacity = '0.7';
-        span.textContent = 'No quick commands available';
-        container.appendChild(span);
+    
+    if (currentViewMode === 'grid') {
+        devicesContainer.innerHTML = filteredDevices.map(([id, d]) => renderDeviceCard(id, d)).join('');
     } else {
-        capabilities.forEach(cmd => {
-            const btn = document.createElement('button');
-            btn.className = 'quick-cmd';
-            btn.textContent = cmd;
-            btn.addEventListener('click', (e) => {
-                if (btn.classList.contains('loading')) return;
-                btn.classList.add('loading');
-                sendCommand(deviceId, cmd, {}, (success, error) => {
-                    btn.classList.remove('loading');
-                    if (!success) {
-                        addLogEntry('error', `Command ${cmd} failed: ${error || 'Unknown error'}`);
-                    }
-                });
-            });
-            container.appendChild(btn);
+        devicesContainer.innerHTML = `
+            <div class="devices-list">
+                ${filteredDevices.map(([id, d]) => renderDeviceListItem(id, d)).join('')}
+            </div>
+        `;
+    }
+    
+    // Attach event listeners to buttons
+    attachDeviceEventListeners();
+}
+
+function renderDeviceCard(id, device) {
+    const lastSeen = device.last_seen ? new Date(device.last_seen * 1000).toLocaleString() : 'Never';
+    const capabilities = device.capabilities || [];
+    const quickCommands = capabilities.slice(0, 4);
+    
+    return `
+        <div class="device-card ${device.status}" data-device-id="${id}">
+            <div class="card-header">
+                <div class="device-icon">
+                    <i class="fas fa-microchip"></i>
+                </div>
+                <span class="status-badge ${device.status}">${device.status}</span>
+            </div>
+            <div class="device-id"><code>${escapeHtml(id)}</code></div>
+            <div class="device-type">${escapeHtml(device.type)}</div>
+            <div class="device-last-seen"><i class="fas fa-clock"></i> Last seen: ${lastSeen}</div>
+            <div class="card-actions">
+                <button class="btn-primary send-cmd" data-id="${id}">Send Command</button>
+                <button class="btn-secondary json-cmd" data-id="${id}">JSON</button>
+                ${device.status === 'online' ? `<button class="btn-secondary disconnect-device" data-id="${id}">Disconnect</button>` : ''}
+                <button class="btn-danger remove-device" data-id="${id}">Remove</button>
+            </div>
+            ${quickCommands.length > 0 ? `
+                <div class="quick-commands">
+                    ${quickCommands.map(cmd => `<button class="quick-cmd" data-id="${id}" data-cmd="${cmd}">${cmd}</button>`).join('')}
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+function renderDeviceListItem(id, device) {
+    const lastSeen = device.last_seen ? new Date(device.last_seen * 1000).toLocaleString() : 'Never';
+    
+    return `
+        <div class="device-list-item" data-device-id="${id}">
+            <div><strong>${escapeHtml(id)}</strong><br><span style="font-size:0.75rem;color:var(--text-muted)">${escapeHtml(device.type)}</span></div>
+            <div><span class="status-badge ${device.status}">${device.status}</span></div>
+            <div style="font-size:0.75rem">${lastSeen}</div>
+            <div>
+                <button class="btn-primary send-cmd small" data-id="${id}">Command</button>
+                <button class="btn-secondary disconnect-device small" data-id="${id}">Disconnect</button>
+                <button class="btn-danger remove-device small" data-id="${id}">Remove</button>
+            </div>
+        </div>
+    `;
+}
+
+function attachDeviceEventListeners() {
+    document.querySelectorAll('.send-cmd').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const deviceId = btn.dataset.id;
+            const device = devices[deviceId];
+            if (device?.status === 'online') {
+                showCommandModal(deviceId);
+            } else {
+                showToast('Device is offline', 'warning');
+            }
         });
-    }
-    td.appendChild(container);
-    quickRow.appendChild(td);
-    deviceRow.insertAdjacentElement('afterend', quickRow);
-    expandedQuickCommandsId = deviceId;
+    });
+    
+    document.querySelectorAll('.json-cmd').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showCommandModal(btn.dataset.id);
+        });
+    });
+    
+    document.querySelectorAll('.quick-cmd').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const deviceId = btn.dataset.id;
+            const command = btn.dataset.cmd;
+            sendCommand(deviceId, command, {});
+        });
+    });
+    
+    document.querySelectorAll('.disconnect-device').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            disconnectDevice(btn.dataset.id);
+        });
+    });
+    
+    document.querySelectorAll('.remove-device').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (confirm(`Remove device ${btn.dataset.id}?`)) {
+                removeDevice(btn.dataset.id);
+            }
+        });
+    });
 }
 
-function removeQuickCommandsRow() {
-    if (expandedQuickCommandsId) {
-        const row = document.getElementById(`quick-row-${expandedQuickCommandsId}`);
-        if (row) row.remove();
-    }
+function showCommandModal(deviceId) {
+    document.getElementById('modalDeviceId').value = deviceId;
+    document.getElementById('modalCommand').value = '';
+    document.getElementById('modalPayload').value = '{}';
+    document.getElementById('commandModal').style.display = 'block';
 }
 
-// === Отправка команд с индикацией и отслеживанием результата ===
 function sendCommand(deviceId, command, payload, callback) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-        alert('Not connected');
-        if (callback) callback(false, 'Not connected');
+        showToast('Not connected to Core', 'error');
         return;
     }
+    
     const msgId = generateUUID();
     const msg = { type: 'command', device_id: deviceId, command, payload, id: msgId };
     ws.send(JSON.stringify(msg));
-    addLogEntry('command', `→ ${deviceId}: ${command} ${JSON.stringify(payload)}`);
-    const historyId = addToHistory(deviceId, command, payload, 'pending');
-    // Сохраняем ожидание результата
-    pendingCommands.set(msgId, {
-        historyId,
+    
+    // Add to history
+    commandHistory.unshift({
+        id: msgId,
+        timestamp: Date.now(),
         deviceId,
         command,
-        params: payload,
-        callback
+        payload: JSON.stringify(payload),
+        status: 'pending',
+        error: null
     });
-    // Таймаут для очистки ожидания (если ответ не придёт)
-    setTimeout(() => {
-        if (pendingCommands.has(msgId)) {
-            const pending = pendingCommands.get(msgId);
-            updateHistoryEntry(pending.historyId, deviceId, command, payload, false, 'Timeout');
-            pendingCommands.delete(msgId);
-            if (pending.callback) pending.callback(false, 'Timeout');
-        }
-    }, 10000);
+    
+    if (commandHistory.length > 100) commandHistory.pop();
+    saveStoredData();
+    renderHistory();
+    
+    addLogEntry('command', `→ ${deviceId}: ${command}`);
+    showToast(`Command sent to ${deviceId}`, 'info');
+    
+    if (callback) callback(true);
 }
 
 function generateUUID() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
         return v.toString(16);
     });
-}
-
-function addToHistory(deviceId, command, payload, status = 'pending') {
-    const entry = {
-        id: Date.now() + '-' + Math.random().toString(36).substr(2, 5),
-        timestamp: new Date(),
-        deviceId,
-        command,
-        payload: JSON.stringify(payload),
-        status: status, // 'pending', 'success', 'error'
-        error: null
-    };
-    commandHistory.unshift(entry);
-    if (commandHistory.length > MAX_HISTORY) commandHistory.pop();
-    renderHistory();
-    return entry.id;
-}
-
-function updateHistoryEntry(historyId, deviceId, command, payload, success, error) {
-    const entry = commandHistory.find(e => e.id === historyId);
-    if (entry) {
-        entry.status = success ? 'success' : 'error';
-        entry.error = error || null;
-        renderHistory();
-    }
-}
-
-function renderHistory() {
-    if (!historyList) return;
-    if (commandHistory.length === 0) {
-        historyList.innerHTML = '<li style="justify-content:center; opacity:0.7;">No commands yet</li>';
-        return;
-    }
-    historyList.innerHTML = commandHistory.map(entry => {
-        const timeStr = entry.timestamp.toLocaleTimeString();
-        let statusIndicator = '';
-        if (entry.status === 'pending') {
-            statusIndicator = '<span class="history-status pending" style="color: #fdcb6e;">⏳ Pending</span>';
-        } else if (entry.status === 'success') {
-            statusIndicator = '<span class="history-status success" style="color: #00b894;">✓ Success</span>';
-        } else if (entry.status === 'error') {
-            statusIndicator = `<span class="history-status error" style="color: #d63031;" title="${entry.error || 'Error'}">✗ Failed</span>`;
-        }
-        return `<li>
-            <span class="history-time">[${timeStr}]</span>
-            ${statusIndicator}
-            <span class="history-device">${entry.deviceId}</span>
-            <span class="history-command">${entry.command}</span>
-            <span class="history-payload">${entry.payload}</span>
-        </li>`;
-    }).join('');
-}
-
-// === Действия с устройствами ===
-function approveDevice(deviceId, approved) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    const msg = pendingAuthRequest && pendingAuthRequest.device_id === deviceId
-        ? { type: 'device_auth_response', id: pendingAuthRequest.id, device_id: deviceId, approved }
-        : { type: 'device_auth_response', device_id: deviceId, approved };
-    ws.send(JSON.stringify(msg));
-    if (pendingAuthRequest && pendingAuthRequest.device_id === deviceId) {
-        pendingAuthRequest = null;
-        authModal.style.display = 'none';
-    }
-    addLogEntry('action', `Device ${deviceId} ${approved ? 'approved' : 'denied'}`);
 }
 
 function disconnectDevice(deviceId) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'disconnect_device', device_id: deviceId }));
-    addLogEntry('action', `Disconnect device ${deviceId}`);
+    addLogEntry('action', `Disconnected device ${deviceId}`);
+    showToast(`Disconnected ${deviceId}`, 'warning');
 }
 
-function reconnectDevice(deviceId) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ type: 'reconnect_device', device_id: deviceId }));
-    addLogEntry('action', `Reconnect device ${deviceId} requested`);
-}
-
-function promptDeleteDevice(deviceId) {
-    if (skipDeleteConfirm) {
-        performDeleteDevice(deviceId);
-        return;
-    }
-    deviceToDelete = deviceId;
-    deleteDeviceIdSpan.textContent = deviceId;
-    deleteModal.style.display = 'block';
-}
-
-function performDeleteDevice(deviceId) {
+function removeDevice(deviceId) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'remove_device', device_id: deviceId }));
-    addLogEntry('action', `Remove device ${deviceId}`);
-    deleteModal.style.display = 'none';
-    deviceToDelete = null;
+    addLogEntry('action', `Removed device ${deviceId}`);
+    showToast(`Removed ${deviceId}`, 'success');
 }
 
-// === Экспорт CSV ===
+function approveDevice(deviceId, approved) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const msg = { type: 'device_auth_response', device_id: deviceId, approved };
+    if (pendingAuthRequest?.device_id === deviceId) {
+        msg.id = pendingAuthRequest.id;
+    }
+    ws.send(JSON.stringify(msg));
+    addLogEntry('auth', `Device ${deviceId} ${approved ? 'approved' : 'denied'}`);
+    showToast(`Device ${deviceId} ${approved ? 'approved' : 'denied'}`, approved ? 'success' : 'warning');
+}
+
+function rotateToken() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        showToast('Not connected', 'error');
+        return;
+    }
+    if (confirm('Generate a new authentication token? All online devices will receive the new token.')) {
+        ws.send(JSON.stringify({ type: 'rotate_token' }));
+        addLogEntry('action', 'Token rotation requested');
+        showToast('Token rotation requested', 'info');
+    }
+}
+
 function exportToCsv() {
-    const filtered = getFilteredAndSortedDevices();
-    const headers = ['ID', 'Type', 'Status', 'Last Seen'];
-    const rows = filtered.map(([id, d]) => [
-        id,
-        d.type,
-        d.status,
-        d.last_seen ? new Date(d.last_seen * 1000).toLocaleString() : ''
+    const headers = ['ID', 'Type', 'Status', 'Last Seen', 'Capabilities'];
+    const rows = Object.entries(devices).map(([id, d]) => [
+        id, d.type, d.status,
+        d.last_seen ? new Date(d.last_seen * 1000).toLocaleString() : '',
+        (d.capabilities || []).join(',')
     ]);
+    
     let csvContent = headers.join(',') + '\n';
     rows.forEach(row => {
         csvContent += row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',') + '\n';
     });
+    
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
     link.setAttribute('download', `devices_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.csv`);
-    link.style.visibility = 'hidden';
+    link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    showToast('Devices exported to CSV', 'success');
 }
 
-// === Логи ===
-function addLogEntry(category, message) {
-    const li = document.createElement('li');
-    const time = new Date().toLocaleTimeString();
-    li.innerHTML = `<span class="log-time">[${time}]</span> [${category}] ${message}`;
-    logList.appendChild(li);
-    document.getElementById('log-container').scrollTop = logList.scrollHeight;
-    if (logList.children.length > 100) logList.removeChild(logList.firstChild);
-}
-
-// === Обработчики UI ===
-function initUI() {
-    // Поиск
-    searchInput.addEventListener('input', (e) => {
-        searchQuery = e.target.value;
-        renderTable();
-    });
-    clearSearchBtn.addEventListener('click', () => {
-        searchInput.value = '';
-        searchQuery = '';
-        renderTable();
-    });
-
-    // Сортировка
-    document.querySelectorAll('th.sortable').forEach(th => {
-        th.addEventListener('click', () => {
-            const column = th.dataset.sort;
-            if (sortColumn === column) {
-                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-            } else {
-                sortColumn = column;
-                sortDirection = 'asc';
-            }
-            renderTable();
-        });
-    });
-
-    // Экспорт
-    exportCsvBtn.addEventListener('click', exportToCsv);
-
-    // Сворачивание истории
-    const historyHeader = document.getElementById('history-header');
-    const historySection = document.querySelector('.collapsible');
-    historyHeader.addEventListener('click', () => {
-        historySection.classList.toggle('collapsed');
-    });
-
-    // Кнопки модалок
-    document.getElementById('clear-logs').onclick = () => logList.innerHTML = '';
-    document.getElementById('clear-history').onclick = () => {
-        commandHistory = [];
-        renderHistory();
-    };
-
-    document.querySelector('#command-modal .close').onclick = () => commandModal.style.display = 'none';
-    document.querySelector('#command-modal .close-modal').onclick = () => commandModal.style.display = 'none';
-    document.getElementById('send-json-command').onclick = () => {
-        const deviceId = modalDeviceId.value;
-        const command = modalCommand.value.trim();
-        let payload = {};
-        try { payload = JSON.parse(modalPayload.value); } catch { alert('Invalid JSON'); return; }
-        if (!command) { alert('Command required'); return; }
-        const btn = document.getElementById('send-json-command');
-        btn.classList.add('loading');
-        sendCommand(deviceId, command, payload, (success, error) => {
-            btn.classList.remove('loading');
-            if (!success) {
-                addLogEntry('error', `Command ${command} failed: ${error || 'Unknown error'}`);
-            }
-        });
-        commandModal.style.display = 'none';
-    };
-
-    document.getElementById('confirm-yes').onclick = () => {
-        if (pendingConfirmation) {
-            const resp = {
-                type: 'confirm_response',
-                id: pendingConfirmation.id,
-                device_id: pendingConfirmation.device_id,
-                command: pendingConfirmation.command,
-                params: pendingConfirmation.params,
-                approved: true
-            };
-            ws.send(JSON.stringify(resp));
-            addLogEntry('command', `Confirmed: ${pendingConfirmation.command} on ${pendingConfirmation.device_id}`);
-        }
-        confirmModal.style.display = 'none';
-        pendingConfirmation = null;
-    };
-    document.getElementById('confirm-no').onclick = () => {
-        if (pendingConfirmation) {
-            addLogEntry('command', `Rejected: ${pendingConfirmation.command} on ${pendingConfirmation.device_id}`);
-        }
-        confirmModal.style.display = 'none';
-        pendingConfirmation = null;
-    };
-
-    document.getElementById('auth-approve').onclick = () => {
-        if (pendingAuthRequest) approveDevice(pendingAuthRequest.device_id, true);
-        authModal.style.display = 'none';
-    };
-    document.getElementById('auth-deny').onclick = () => {
-        if (pendingAuthRequest) approveDevice(pendingAuthRequest.device_id, false);
-        authModal.style.display = 'none';
-    };
-
-    // Удаление
-    document.getElementById('delete-confirm').onclick = () => {
-        if (dontAskDeleteCheck.checked) {
-            localStorage.setItem('skipDeleteConfirm', 'true');
-            skipDeleteConfirm = true;
-        }
-        if (deviceToDelete) performDeleteDevice(deviceToDelete);
-    };
-    document.getElementById('delete-cancel').onclick = () => {
-        deleteModal.style.display = 'none';
-        deviceToDelete = null;
-    };
-
-    window.onclick = (e) => {
-        if (e.target === commandModal) commandModal.style.display = 'none';
-        if (e.target === confirmModal) confirmModal.style.display = 'none';
-        if (e.target === authModal) authModal.style.display = 'none';
-        if (e.target === deleteModal) deleteModal.style.display = 'none';
-    };
-
-    const enableNotificationsBtn = document.getElementById('enable-notifications');
-    if (enableNotificationsBtn) {
-        enableNotificationsBtn.addEventListener('click', requestNotificationPermission);
-    }
-    const rotateTokenBtn = document.getElementById('rotate-token');
-    if (rotateTokenBtn) {
-        rotateTokenBtn.addEventListener('click', rotateToken);
-    }
-
-    // Инициализация истории
-    renderHistory();
-}
-
-function rotateToken() {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-        alert('Not connected');
+function renderHistory() {
+    if (!historyList) return;
+    
+    if (commandHistory.length === 0) {
+        historyList.innerHTML = '<div class="loading-placeholder">No command history</div>';
         return;
     }
-    if (confirm('Generate a new authentication token? All online devices will receive the new token. Offline devices will need manual update.')) {
-        ws.send(JSON.stringify({ type: 'rotate_token' }));
-        addLogEntry('action', 'Token rotation requested');
+    
+    historyList.innerHTML = commandHistory.map(entry => `
+        <div class="history-item">
+            <span class="history-time">${new Date(entry.timestamp).toLocaleString()}</span>
+            <span class="history-status ${entry.status}">${entry.status}</span>
+            <span class="history-device">${escapeHtml(entry.deviceId)}</span>
+            <span class="history-command">${escapeHtml(entry.command)}</span>
+            <span class="history-payload">${entry.payload !== '{}' ? entry.payload : ''}</span>
+            ${entry.error ? `<span class="history-error" style="color:var(--danger)">${escapeHtml(entry.error)}</span>` : ''}
+        </div>
+    `).join('');
+}
+
+function renderLogs() {
+    if (!logsContainer) return;
+    
+    if (eventLogs.length === 0) {
+        logsContainer.innerHTML = '<div class="loading-placeholder">No event logs</div>';
+        return;
+    }
+    
+    logsContainer.innerHTML = eventLogs.map(log => `
+        <div class="log-item">
+            <span class="log-time">${log.time}</span>
+            <span class="log-category" style="color:var(--accent-primary)">[${log.category}]</span>
+            <span class="log-message">${escapeHtml(log.message)}</span>
+        </div>
+    `).join('');
+}
+
+function addLogEntry(category, message) {
+    eventLogs.unshift({
+        time: new Date().toLocaleTimeString(),
+        category,
+        message
+    });
+    
+    if (eventLogs.length > 200) eventLogs.pop();
+    renderLogs();
+    
+    // Auto-scroll logs container
+    if (logsContainer && currentView === 'logs') {
+        logsContainer.scrollTop = 0;
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    if ('Notification' in window) {
-        updateNotificationButtonState();
-    } else {
-        const btn = document.getElementById('enable-notifications');
-        if (btn) btn.style.display = 'none';
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `
+        <i class="fas ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'}"></i>
+        <span>${escapeHtml(message)}</span>
+    `;
+    
+    container.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.animation = 'slideOutRight 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+function checkAndNotifyPending() {
+    if (Notification.permission !== 'granted') return;
+    
+    Object.entries(devices).forEach(([id, device]) => {
+        if (device.status === 'pending' && !notifiedPendingIds.has(id)) {
+            notifiedPendingIds.add(id);
+            new Notification('New Device Pending Authorization', {
+                body: `Device ${id} (${device.type}) is waiting for approval.`,
+                icon: '/static/favicon.ico',
+                tag: `pending-${id}`,
+                requireInteraction: true
+            });
+        }
+    });
+}
+
+function requestNotificationPermission() {
+    if (!('Notification' in window)) {
+        showToast('Notifications not supported', 'error');
+        return;
     }
-    initUI();
-    connectWebSocket();
-});
+    
+    if (Notification.permission === 'granted') {
+        showToast('Notifications already enabled', 'success');
+    } else if (Notification.permission !== 'denied') {
+        Notification.requestPermission().then(permission => {
+            if (permission === 'granted') {
+                showToast('Notifications enabled', 'success');
+            }
+        });
+    }
+}
+
+function saveStoredData() {
+    localStorage.setItem('commandHistory', JSON.stringify(commandHistory.slice(0, 50)));
+}
+
+function loadStoredData() {
+    const saved = localStorage.getItem('commandHistory');
+    if (saved) {
+        try {
+            commandHistory = JSON.parse(saved);
+            renderHistory();
+        } catch (e) {}
+    }
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
