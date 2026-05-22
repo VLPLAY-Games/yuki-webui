@@ -1202,6 +1202,15 @@ function disconnectDevice(deviceId) {
 function removeDevice(deviceId) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'remove_device', device_id: deviceId }));
+    
+    // Локально удаляем устройство из списка
+    if (devices[deviceId]) {
+        delete devices[deviceId];
+        renderDevices();           // Обновляем отображение
+        updateDashboardStats();    // Обновляем статистику
+        updateMiniStats();         // Обновляем виджеты
+    }
+    
     addLogEntry('action', `Removed device ${deviceId}`);
     showToast(`Removed ${deviceId}`, 'success');
 }
