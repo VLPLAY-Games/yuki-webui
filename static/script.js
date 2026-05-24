@@ -1763,17 +1763,40 @@ function showAddWidgetModal() {
                 </div>
                 
                 <div class="form-group" style="margin-top: 20px;">
-                    <label><i class="fas fa-arrows-left-right"></i> Widget Width</label>
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <input type="range" id="newWidgetWidth" min="1" max="4" value="2" step="1" style="flex: 1;">
-                        <span id="widthPreview" style="background: var(--accent-primary); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; min-width: 50px; text-align: center;">2 cols</span>
-                    </div>
-                    <div style="display: flex; gap: 8px; margin-top: 8px;">
-                        <span style="font-size: 0.7rem; color: var(--text-muted);">Narrow</span>
-                        <div style="flex: 1; height: 4px; background: var(--border-color); border-radius: 2px;">
-                            <div id="widthIndicator" style="width: 50%; height: 100%; background: var(--accent-primary); border-radius: 2px;"></div>
+                    <label><i class="fas fa-arrows-left-right"></i> Widget Width (1-4 columns)</label>
+                    
+                    <!-- Визуальные индикаторы ширины -->
+                    <div style="display: flex; gap: 8px; margin-bottom: 15px;">
+                        <div class="width-indicator" data-width="1" style="flex: 1; text-align: center; cursor: pointer;">
+                            <div style="height: 40px; background: var(--bg-tertiary); border-radius: 8px; border: 2px solid var(--border-color); transition: all 0.2s;">
+                                <div style="height: 100%; width: 25%; background: var(--accent-primary); border-radius: 6px;"></div>
+                            </div>
+                            <span style="font-size: 0.7rem; margin-top: 5px; display: block;">1 col (25%)</span>
                         </div>
-                        <span style="font-size: 0.7rem; color: var(--text-muted);">Wide</span>
+                        <div class="width-indicator" data-width="2" style="flex: 1; text-align: center; cursor: pointer;">
+                            <div style="height: 40px; background: var(--bg-tertiary); border-radius: 8px; border: 2px solid var(--accent-primary); transition: all 0.2s;">
+                                <div style="height: 100%; width: 50%; background: var(--accent-primary); border-radius: 6px;"></div>
+                            </div>
+                            <span style="font-size: 0.7rem; margin-top: 5px; display: block;">2 col (50%)</span>
+                        </div>
+                        <div class="width-indicator" data-width="3" style="flex: 1; text-align: center; cursor: pointer;">
+                            <div style="height: 40px; background: var(--bg-tertiary); border-radius: 8px; border: 2px solid var(--border-color); transition: all 0.2s;">
+                                <div style="height: 100%; width: 75%; background: var(--accent-primary); border-radius: 6px;"></div>
+                            </div>
+                            <span style="font-size: 0.7rem; margin-top: 5px; display: block;">3 col (75%)</span>
+                        </div>
+                        <div class="width-indicator" data-width="4" style="flex: 1; text-align: center; cursor: pointer;">
+                            <div style="height: 40px; background: var(--bg-tertiary); border-radius: 8px; border: 2px solid var(--border-color); transition: all 0.2s;">
+                                <div style="height: 100%; width: 100%; background: var(--accent-primary); border-radius: 6px;"></div>
+                            </div>
+                            <span style="font-size: 0.7rem; margin-top: 5px; display: block;">4 col (100%)</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Скрытый слайдер -->
+                    <input type="range" id="newWidgetWidth" min="1" max="4" value="2" step="1" style="width: 100%; margin-top: 5px;">
+                    <div id="widthPreview" style="text-align: center; margin-top: 10px; padding: 5px; background: var(--accent-primary); border-radius: 20px; font-size: 0.8rem;">
+                        Width: 2 columns (50%)
                     </div>
                 </div>
                 
@@ -1817,27 +1840,63 @@ function showAddWidgetModal() {
         });
     });
     
-    // Width slider preview
-    const widthSlider = document.getElementById('newWidgetWidth');
-    const widthPreview = document.getElementById('widthPreview');
-    const widthIndicator = document.getElementById('widthIndicator');
-    
-    if (widthSlider) {
-        widthSlider.addEventListener('input', (e) => {
-            const val = e.target.value;
-            widthPreview.textContent = `${val} col${val > 1 ? 's' : ''}`;
-            if (widthIndicator) {
-                widthIndicator.style.width = `${(val / 4) * 100}%`;
+    // Функция обновления визуальных индикаторов
+    function updateWidthIndicators(value) {
+        const indicators = modal.querySelectorAll('.width-indicator');
+        indicators.forEach((indicator, index) => {
+            const widthValue = parseInt(indicator.dataset.width);
+            const borderDiv = indicator.querySelector('div');
+            if (borderDiv) {
+                if (widthValue === value) {
+                    borderDiv.style.borderColor = 'var(--accent-primary)';
+                    borderDiv.style.borderWidth = '2px';
+                } else {
+                    borderDiv.style.borderColor = 'var(--border-color)';
+                    borderDiv.style.borderWidth = '2px';
+                }
             }
+        });
+        
+        const preview = document.getElementById('widthPreview');
+        if (preview) {
+            let percent = '';
+            if (value === 1) percent = '25%';
+            else if (value === 2) percent = '50%';
+            else if (value === 3) percent = '75%';
+            else percent = '100%';
+            preview.textContent = `Width: ${value} column${value > 1 ? 's' : ''} (${percent})`;
+        }
+    }
+    
+    // Обработчик для визуальных индикаторов
+    const indicators = modal.querySelectorAll('.width-indicator');
+    indicators.forEach(indicator => {
+        indicator.addEventListener('click', () => {
+            const width = parseInt(indicator.dataset.width);
+            const slider = document.getElementById('newWidgetWidth');
+            if (slider) {
+                slider.value = width;
+                updateWidthIndicators(width);
+            }
+        });
+    });
+    
+    // Width slider
+    const widthSlider = document.getElementById('newWidgetWidth');
+    if (widthSlider) {
+        // Устанавливаем начальное значение
+        widthSlider.value = 2;
+        updateWidthIndicators(2);
+        
+        widthSlider.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value);
+            updateWidthIndicators(val);
         });
     }
     
     // Закрытие модала
     const closeModal = () => {
-        // Очищаем интервалы если есть
-        if (modal.remove) {
-            modal.remove();
-        }
+        modal.remove();
     };
     
     modal.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
