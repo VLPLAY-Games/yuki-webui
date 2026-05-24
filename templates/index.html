@@ -653,6 +653,16 @@
                                 <option value="auth_failed">Auth Failed</option>
                             </select>
                             <input type="text" id="auditSearch" placeholder="Search...">
+                            <!-- Добавьте селектор количества элементов -->
+                            <div class="audit-perpage">
+                                <span>Show:</span>
+                                <select id="auditPerPage">
+                                    <option value="10">10</option>
+                                    <option value="25" selected>25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="audit-list" id="auditContainer">
                             <div class="loading-placeholder">Loading...</div>

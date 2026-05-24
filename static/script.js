@@ -2375,9 +2375,16 @@ async function addToBlacklist() {
 }
 
 // ==================== AUDIT LOG ====================
-async function loadAuditLog() {
+let auditLogData = []; // Храним все логи
+let auditCurrentPage = 1;
+let auditItemsPerPage = 25;
+
+async function loadAuditLog(resetPage = true) {
+    if (resetPage) {
+        auditCurrentPage = 1;
+    }
     if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'get_audit_log', limit: 200 }));
+        ws.send(JSON.stringify({ type: 'get_audit_log', limit: 500 })); // Запрашиваем больше логов
     }
 }
 
@@ -2387,6 +2394,9 @@ function updateAuditLog(logs) {
     const search = document.getElementById('auditSearch')?.value.toLowerCase() || '';
     
     if (!container) return;
+    
+    // Сохраняем все логи
+    auditLogData = logs;
     
     let filteredLogs = logs;
     if (filter !== 'all') {
@@ -2404,7 +2414,14 @@ function updateAuditLog(logs) {
         return;
     }
     
-    container.innerHTML = filteredLogs.map(log => `
+    // Пагинация
+    const totalPages = Math.ceil(filteredLogs.length / auditItemsPerPage);
+    const start = (auditCurrentPage - 1) * auditItemsPerPage;
+    const end = start + auditItemsPerPage;
+    const pageLogs = filteredLogs.slice(start, end);
+    
+    // Отображаем логи
+    let html = pageLogs.map(log => `
         <div class="audit-item">
             <span class="audit-time">${new Date(log.timestamp * 1000).toLocaleString()}</span>
             <span class="audit-event ${log.event_type}">${log.event_type}</span>
@@ -2413,7 +2430,49 @@ function updateAuditLog(logs) {
             ${log.ip_address ? `<span class="audit-ip">${escapeHtml(log.ip_address)}</span>` : ''}
         </div>
     `).join('');
+    
+    // Добавляем пагинацию
+    if (totalPages > 1) {
+        html += `
+            <div class="audit-pagination">
+                <button class="pagination-btn" onclick="changeAuditPage(-1)" ${auditCurrentPage === 1 ? 'disabled' : ''}>
+                    <i class="fas fa-chevron-left"></i> Previous
+                </button>
+                <span class="pagination-info">Page ${auditCurrentPage} of ${totalPages} (${filteredLogs.length} items)</span>
+                <button class="pagination-btn" onclick="changeAuditPage(1)" ${auditCurrentPage === totalPages ? 'disabled' : ''}>
+                    Next <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
 }
+
+function changeAuditPage(direction) {
+    auditCurrentPage += direction;
+    // Не обновляем фильтры, просто перерисовываем с текущими данными
+    const filter = document.getElementById('auditEventFilter')?.value || 'all';
+    const search = document.getElementById('auditSearch')?.value.toLowerCase() || '';
+    
+    let filteredLogs = auditLogData;
+    if (filter !== 'all') {
+        filteredLogs = filteredLogs.filter(log => log.event_type === filter);
+    }
+    if (search) {
+        filteredLogs = filteredLogs.filter(log => 
+            (log.device_id && log.device_id.toLowerCase().includes(search)) ||
+            (log.details && log.details.toLowerCase().includes(search))
+        );
+    }
+    
+    const totalPages = Math.ceil(filteredLogs.length / auditItemsPerPage);
+    if (auditCurrentPage < 1) auditCurrentPage = 1;
+    if (auditCurrentPage > totalPages) auditCurrentPage = totalPages;
+    
+    updateAuditLog(auditLogData);
+}
+
 
 // ==================== COMMAND STATS ====================
 let commandsChart = null;
@@ -2496,8 +2555,14 @@ function initAdminListeners() {
     document.getElementById('refreshBlacklistBtn')?.addEventListener('click', loadBlacklist);
     document.getElementById('refreshAuditBtn')?.addEventListener('click', loadAuditLog);
     document.getElementById('addToBlacklistBtn')?.addEventListener('click', addToBlacklist);
-    document.getElementById('auditEventFilter')?.addEventListener('change', () => loadAuditLog());
-    document.getElementById('auditSearch')?.addEventListener('input', () => loadAuditLog());
+    document.getElementById('auditEventFilter')?.addEventListener('change', () => {
+        auditCurrentPage = 1;
+        loadAuditLog();
+    });
+    document.getElementById('auditSearch')?.addEventListener('input', () => {
+        auditCurrentPage = 1;
+        loadAuditLog();
+    });
     
     document.querySelectorAll('.stats-period .period-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -2507,6 +2572,15 @@ function initAdminListeners() {
             loadCommandStats(currentStatPeriod);
         });
     });
+
+    const auditPerPage = document.getElementById('auditPerPage');
+    if (auditPerPage) {
+        auditPerPage.addEventListener('change', (e) => {
+            auditItemsPerPage = parseInt(e.target.value);
+            auditCurrentPage = 1;
+            updateAuditLog(auditLogData);
+        });
+    }
 }
 
 // ==================== НОВЫЕ ФУНКЦИИ ДЛЯ РАСШИРЕННОГО СТАТУСА ====================
