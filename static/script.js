@@ -1575,11 +1575,11 @@ function renderWidgets() {
     
     if (!widgets || widgets.length === 0) {
         container.innerHTML = `
-            <div class="empty-widgets" style="grid-column: span 2; text-align: center; padding: 40px; background: var(--bg-secondary); border-radius: 20px; border: 2px dashed var(--border-color);">
-                <i class="fas fa-th-large" style="font-size: 3rem; color: var(--text-muted); margin-bottom: 15px; display: block;"></i>
-                <h3 style="margin-bottom: 10px;">No Widgets</h3>
-                <p style="color: var(--text-secondary); margin-bottom: 20px;">Click "Add Widget" to customize your dashboard</p>
-                <button class="btn-primary" onclick="showAddWidgetModal()">
+            <div class="empty-widgets" style="grid-column: span 4; text-align: center; padding: 60px 40px; background: var(--bg-secondary); border-radius: 20px; border: 2px dashed var(--border-color);">
+                <i class="fas fa-th-large" style="font-size: 4rem; color: var(--text-muted); margin-bottom: 20px; display: block;"></i>
+                <h3 style="margin-bottom: 10px; color: var(--text-primary);">No Widgets</h3>
+                <p style="color: var(--text-secondary); margin-bottom: 25px;">Click "Add Widget" to customize your dashboard</p>
+                <button class="btn-primary" onclick="showAddWidgetModal()" style="padding: 10px 24px;">
                     <i class="fas fa-plus"></i> Add Your First Widget
                 </button>
             </div>
@@ -1642,8 +1642,13 @@ function renderWidget(widget) {
         server_uptime: 'Server Uptime'
     };
     
+    // Ширина от 1 до 4 колонок
+    const width = widget.w || 2;
+    // Ограничиваем ширину максимум 4
+    const span = Math.min(Math.max(width, 1), 4);
+    
     return `
-        <div class="dashboard-widget" data-widget-id="${widget.id}" style="grid-column: span ${widget.w || 2};">
+        <div class="dashboard-widget" data-widget-id="${widget.id}" style="grid-column: span ${span};">
             <div class="widget-header">
                 <h3><i class="fas ${icons[widget.type]}"></i> ${titles[widget.type] || widget.type}</h3>
                 <div class="widget-controls">

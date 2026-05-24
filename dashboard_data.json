@@ -1,32 +1,5 @@
 {
   "groups": {},
   "tags": {},
-  "widgets": [
-    {
-      "id": "server_uptime_1779625772677",
-      "type": "server_uptime",
-      "w": 2,
-      "h": 1,
-      "interval": 100
-    },
-    {
-      "id": "clock_calendar_1779625792413",
-      "type": "clock_calendar",
-      "w": 4,
-      "h": 2,
-      "interval": 101
-    },
-    {
-      "id": "stats_1779625796749",
-      "type": "stats",
-      "w": 1,
-      "h": 1
-    },
-    {
-      "id": "system_health_1779625800493",
-      "type": "system_health",
-      "w": 2,
-      "h": 2
-    }
-  ]
+  "widgets": []
 }
