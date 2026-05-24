@@ -513,6 +513,20 @@ function initEventListeners() {
             ws.send(JSON.stringify({ type: 'get_extended_statuses' }));
         }
     }, 30000); // Каждые 30 секунд
+
+    setTimeout(() => {
+        const addBtn = document.getElementById('addWidgetBtn');
+        if (addBtn) {
+            // Удаляем старые обработчики
+            const newBtn = addBtn.cloneNode(true);
+            addBtn.parentNode.replaceChild(newBtn, addBtn);
+            newBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                showAddWidgetModal();
+            });
+        }
+    }, 500);
     
     // Modal handlers
     initModalHandlers();
@@ -1621,28 +1635,73 @@ async function removeWidget(widgetId) {
 }
 
 function showAddWidgetModal() {
+    // Удаляем существующий модал, если есть
+    const existingModal = document.getElementById('addWidgetModal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
     const modal = document.createElement('div');
     modal.className = 'modal';
     modal.id = 'addWidgetModal';
     modal.innerHTML = `
-        <div class="modal-content" style="max-width: 400px;">
+        <div class="modal-content" style="max-width: 450px;">
             <div class="modal-header">
-                <h3><i class="fas fa-plus"></i> Add Widget</h3>
+                <h3><i class="fas fa-plus-circle" style="color: var(--accent-primary);"></i> Add Widget</h3>
                 <button class="modal-close">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label>Widget Type</label>
-                    <select id="newWidgetType" class="form-control">
-                        <option value="stats">📊 Statistics (Total/Online/Pending)</option>
-                        <option value="token">🔑 Token Info</option>
-                        <option value="recent_commands">📜 Recent Commands</option>
-                    </select>
+                    <label><i class="fas fa-chart-simple"></i> Widget Type</label>
+                    <div class="widget-type-options" style="display: flex; flex-direction: column; gap: 10px;">
+                        <label class="widget-option" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
+                            <input type="radio" name="widgetType" value="stats" checked style="width: 18px; height: 18px; cursor: pointer;">
+                            <i class="fas fa-chart-pie" style="font-size: 1.5rem; color: var(--accent-primary);"></i>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600;">Statistics Widget</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">Shows total, online and pending device counts</div>
+                            </div>
+                        </label>
+                        <label class="widget-option" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
+                            <input type="radio" name="widgetType" value="token" style="width: 18px; height: 18px; cursor: pointer;">
+                            <i class="fas fa-key" style="font-size: 1.5rem; color: var(--success);"></i>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600;">Token Info Widget</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">Displays current token creation and expiration</div>
+                            </div>
+                        </label>
+                        <label class="widget-option" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
+                            <input type="radio" name="widgetType" value="recent_commands" style="width: 18px; height: 18px; cursor: pointer;">
+                            <i class="fas fa-history" style="font-size: 1.5rem; color: var(--warning);"></i>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600;">Recent Commands Widget</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">Shows last 5 executed commands</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top: 20px;">
+                    <label><i class="fas fa-arrows-left-right"></i> Widget Width</label>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="range" id="newWidgetWidth" min="1" max="4" value="2" step="1" style="flex: 1;">
+                        <span id="widthPreview" style="background: var(--accent-primary); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; min-width: 50px; text-align: center;">2 cols</span>
+                    </div>
+                    <div style="display: flex; gap: 8px; margin-top: 8px;">
+                        <span style="font-size: 0.7rem; color: var(--text-muted);">Narrow</span>
+                        <div style="flex: 1; height: 4px; background: var(--border-color); border-radius: 2px;">
+                            <div id="widthIndicator" style="width: 50%; height: 100%; background: var(--accent-primary); border-radius: 2px;"></div>
+                        </div>
+                        <span style="font-size: 0.7rem; color: var(--text-muted);">Wide</span>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button id="confirmAddWidgetBtn" class="btn-primary">Add Widget</button>
-                <button class="btn-secondary modal-cancel">Cancel</button>
+                <button id="confirmAddWidgetBtn" class="btn-primary">
+                    <i class="fas fa-plus"></i> Add Widget
+                </button>
+                <button class="btn-secondary modal-cancel">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
             </div>
         </div>
     `;
@@ -1650,24 +1709,79 @@ function showAddWidgetModal() {
     document.body.appendChild(modal);
     modal.style.display = 'block';
     
-    modal.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
-        btn.addEventListener('click', () => modal.remove());
+    // Add hover effects for options
+    const options = modal.querySelectorAll('.widget-option');
+    options.forEach(opt => {
+        opt.addEventListener('mouseenter', () => {
+            opt.style.background = 'var(--bg-secondary)';
+            opt.style.borderColor = 'var(--accent-primary)';
+        });
+        opt.addEventListener('mouseleave', () => {
+            opt.style.background = 'var(--bg-tertiary)';
+            opt.style.borderColor = 'transparent';
+        });
+        // Check radio when clicking anywhere on the option
+        opt.addEventListener('click', (e) => {
+            if (e.target.type !== 'radio') {
+                const radio = opt.querySelector('input[type="radio"]');
+                if (radio) radio.checked = true;
+            }
+        });
     });
     
-    document.getElementById('confirmAddWidgetBtn')?.addEventListener('click', async () => {
-        const type = document.getElementById('newWidgetType').value;
-        const newId = `${type}_${Date.now()}`;
-        widgets.push({
-            id: newId,
-            type: type,
-            w: 2,
-            h: type === 'recent_commands' ? 2 : 1
+    // Width slider preview
+    const widthSlider = document.getElementById('newWidgetWidth');
+    const widthPreview = document.getElementById('widthPreview');
+    const widthIndicator = document.getElementById('widthIndicator');
+    
+    if (widthSlider) {
+        widthSlider.addEventListener('input', (e) => {
+            const val = e.target.value;
+            widthPreview.textContent = `${val} col${val > 1 ? 's' : ''}`;
+            if (widthIndicator) {
+                widthIndicator.style.width = `${(val / 4) * 100}%`;
+            }
         });
-        await saveWidgets();
-        renderWidgets();
+    }
+    
+    // Закрытие модала
+    const closeModal = () => {
         modal.remove();
-        showToast('Widget added', 'success');
+    };
+    
+    modal.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
+        btn.addEventListener('click', closeModal);
     });
+    
+    // Клик вне модала
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            closeModal();
+        }
+    });
+    
+    // Добавление виджета
+    const confirmBtn = document.getElementById('confirmAddWidgetBtn');
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', async () => {
+            const selectedRadio = modal.querySelector('input[name="widgetType"]:checked');
+            const type = selectedRadio ? selectedRadio.value : 'stats';
+            const width = parseInt(document.getElementById('newWidgetWidth')?.value || 2);
+            const newId = `${type}_${Date.now()}`;
+            
+            widgets.push({
+                id: newId,
+                type: type,
+                w: Math.min(Math.max(width, 1), 4),
+                h: type === 'recent_commands' ? 2 : 1
+            });
+            
+            await saveWidgets();
+            renderWidgets();
+            closeModal();
+            showToast(`Widget "${type.replace('_', ' ')}" added successfully`, 'success');
+        });
+    }
 }
 
 async function resetWidgets() {
@@ -1684,6 +1798,7 @@ async function resetWidgets() {
 }
 
 function addAddWidgetButton() {
+    // Ищем контейнер виджетов или создаем кнопку в нужном месте
     const sectionHeader = document.querySelector('#dashboardView .section-header:first-of-type');
     if (sectionHeader && !document.getElementById('addWidgetBtn')) {
         const addBtn = document.createElement('button');
@@ -1691,8 +1806,26 @@ function addAddWidgetButton() {
         addBtn.className = 'btn-secondary small';
         addBtn.innerHTML = '<i class="fas fa-plus"></i> Add Widget';
         addBtn.style.marginLeft = '10px';
-        addBtn.addEventListener('click', showAddWidgetModal);
+        addBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            showAddWidgetModal();
+        });
         sectionHeader.appendChild(addBtn);
+    }
+    
+    // Также проверяем и добавляем обработчик для существующей кнопки, если она уже есть в HTML
+    const existingAddBtn = document.getElementById('addWidgetBtn');
+    if (existingAddBtn && !existingAddBtn.hasListener) {
+        const newBtn = existingAddBtn.cloneNode(true);
+        existingAddBtn.parentNode.replaceChild(newBtn, existingAddBtn);
+        newBtn.id = 'addWidgetBtn';
+        newBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            showAddWidgetModal();
+        });
+        newBtn.hasListener = true;
     }
 }
 
