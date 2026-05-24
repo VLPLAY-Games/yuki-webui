@@ -157,12 +157,56 @@ body {
 
 .nav-item .badge {
     margin-left: auto;
-    background: var(--danger);
-    color: white;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
     padding: 2px 8px;
     border-radius: 20px;
     font-size: 0.75rem;
     font-weight: 600;
+    transition: var(--transition);
+}
+
+/* Цвета для разных статусов */
+.nav-item .badge.online {
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--success);
+    box-shadow: 0 0 4px rgba(16, 185, 129, 0.3);
+}
+
+.nav-item .badge.pending {
+    background: rgba(245, 158, 11, 0.2);
+    color: var(--warning);
+    box-shadow: 0 0 4px rgba(245, 158, 11, 0.3);
+}
+
+.nav-item .badge.offline {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--danger);
+    box-shadow: 0 0 4px rgba(239, 68, 68, 0.3);
+}
+
+/* Активный пункт меню - бейдж должен быть виден, но фон можно сделать белым/черным */
+.nav-item.active .badge {
+    background: rgba(0, 0, 0, 0.3);
+    color: white;
+}
+
+.nav-item.active .badge.online {
+    background: rgba(16, 185, 129, 0.4);
+    color: #6ee7b7;
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+}
+
+.nav-item.active .badge.pending {
+    background: rgba(245, 158, 11, 0.4);
+    color: #fcd34d;
+    box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+}
+
+.nav-item.active .badge.offline {
+    background: rgba(239, 68, 68, 0.4);
+    color: #fca5a5;
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
 }
 
 /* Sidebar Footer */

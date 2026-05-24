@@ -853,6 +853,7 @@ function updateDashboardStats() {
     const pending = Object.values(devices).filter(d => d.status === 'pending').length;
     const offline = Object.values(devices).filter(d => d.status === 'offline').length;
     
+    // Обновляем цифры в карточках статистики
     const totalEl = document.getElementById('totalDevices');
     if (totalEl) totalEl.textContent = total;
     const onlineEl = document.getElementById('onlineDevices');
@@ -861,10 +862,35 @@ function updateDashboardStats() {
     if (pendingEl) pendingEl.textContent = pending;
     const offlineEl = document.getElementById('offlineDevices');
     if (offlineEl) offlineEl.textContent = offline;
-    const badgeEl = document.getElementById('deviceCountBadge');
-    if (badgeEl) badgeEl.textContent = total;
     
-    // Recent commands preview
+    // ОБНОВЛЯЕМ БЕЙДЖ В САЙДБАРЕ
+    const badge = document.getElementById('deviceCountBadge');
+    if (badge) {
+        // Определяем основной статус для отображения (приоритет: онлайн > pending > оффлайн)
+        let mainStatus = 'offline';
+        let displayCount = offline;
+        
+        if (online > 0) {
+            mainStatus = 'online';
+            displayCount = online;
+        } else if (pending > 0) {
+            mainStatus = 'pending';
+            displayCount = pending;
+        } else {
+            mainStatus = 'offline';
+            displayCount = offline;
+        }
+        
+        // Меняем текст и классы
+        badge.textContent = displayCount;
+        
+        // Убираем старые классы статусов
+        badge.classList.remove('online', 'pending', 'offline');
+        // Добавляем новый класс
+        badge.classList.add(mainStatus);
+    }
+    
+    // Recent commands preview (оставляем как было)
     const recentContainer = document.getElementById('recentCommands');
     if (recentContainer) {
         if (commandHistory.length > 0) {
