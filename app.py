@@ -252,14 +252,17 @@ def widgets_api():
     global widget_layout
     
     if request.method == 'GET':
-        if not widget_layout:
-            # Default widgets
-            widget_layout = [
-                {'id': 'stats', 'type': 'stats', 'x': 0, 'y': 0, 'w': 2, 'h': 1},
-                {'id': 'token', 'type': 'token', 'x': 0, 'y': 1, 'w': 2, 'h': 1},
-                {'id': 'recent', 'type': 'recent_commands', 'x': 0, 'y': 2, 'w': 2, 'h': 2}
+        # Если есть сохраненные виджеты (даже пустой массив) - возвращаем их
+        if widget_layout is not None:
+            return jsonify(widget_layout)
+        else:
+            # Только если нет сохраненных данных, возвращаем дефолтные
+            default_widgets = [
+                {'id': 'stats', 'type': 'stats', 'w': 2, 'h': 1},
+                {'id': 'token', 'type': 'token', 'w': 2, 'h': 1},
+                {'id': 'recent', 'type': 'recent_commands', 'w': 2, 'h': 2}
             ]
-        return jsonify(widget_layout)
+            return jsonify(default_widgets)
     
     elif request.method == 'POST':
         widget_layout = request.json

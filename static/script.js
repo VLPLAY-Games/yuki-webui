@@ -1513,8 +1513,13 @@ let availableWidgets = ['stats', 'token', 'recent_commands'];
 async function loadWidgets() {
     try {
         const response = await fetch('/api/widgets');
-        widgets = await response.json();
-        if (!widgets || widgets.length === 0) {
+        const savedWidgets = await response.json();
+        
+        // Если есть сохраненные виджеты (даже пустой массив) - используем их
+        if (savedWidgets && Array.isArray(savedWidgets)) {
+            widgets = savedWidgets;
+        } else {
+            // Только если нет сохраненных данных, устанавливаем дефолтные
             widgets = [
                 { id: 'stats', type: 'stats', w: 2, h: 1 },
                 { id: 'token', type: 'token', w: 2, h: 1 },
@@ -1525,6 +1530,18 @@ async function loadWidgets() {
         renderWidgets();
     } catch (e) {
         console.error('Failed to load widgets', e);
+        // При ошибке загрузки тоже используем сохраненные из localStorage как fallback
+        const localWidgets = localStorage.getItem('widgets_backup');
+        if (localWidgets) {
+            try {
+                widgets = JSON.parse(localWidgets);
+                if (widgets && widgets.length > 0) {
+                    renderWidgets();
+                    return;
+                }
+            } catch(e2) {}
+        }
+        // Если ничего нет - дефолтные
         widgets = [
             { id: 'stats', type: 'stats', w: 2, h: 1 },
             { id: 'token', type: 'token', w: 2, h: 1 },
@@ -1541,10 +1558,15 @@ async function saveWidgets() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(widgets)
         });
+        // Сохраняем бэкап в localStorage
+        localStorage.setItem('widgets_backup', JSON.stringify(widgets));
     } catch (e) {
         console.error('Failed to save widgets', e);
+        // Даже если сервер недоступен, сохраняем в localStorage
+        localStorage.setItem('widgets_backup', JSON.stringify(widgets));
     }
 }
+
 
 
 function renderWidgets() {
@@ -1552,7 +1574,16 @@ function renderWidgets() {
     if (!container) return;
     
     if (!widgets || widgets.length === 0) {
-        container.innerHTML = '<div class="loading-placeholder">No widgets. Click "Add Widget" to get started.</div>';
+        container.innerHTML = `
+            <div class="empty-widgets" style="grid-column: span 2; text-align: center; padding: 40px; background: var(--bg-secondary); border-radius: 20px; border: 2px dashed var(--border-color);">
+                <i class="fas fa-th-large" style="font-size: 3rem; color: var(--text-muted); margin-bottom: 15px; display: block;"></i>
+                <h3 style="margin-bottom: 10px;">No Widgets</h3>
+                <p style="color: var(--text-secondary); margin-bottom: 20px;">Click "Add Widget" to customize your dashboard</p>
+                <button class="btn-primary" onclick="showAddWidgetModal()">
+                    <i class="fas fa-plus"></i> Add Your First Widget
+                </button>
+            </div>
+        `;
         return;
     }
     
@@ -1792,6 +1823,8 @@ async function resetWidgets() {
             { id: 'recent', type: 'recent_commands', w: 2, h: 2 }
         ];
         await saveWidgets();
+        // Очищаем бэкап при сбросе
+        localStorage.setItem('widgets_backup', JSON.stringify(widgets));
         renderWidgets();
         showToast('Widgets reset to default', 'success');
     }
