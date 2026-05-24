@@ -782,6 +782,10 @@ function handleMessage(data) {
 
         case 'metrics_update':
             updateDeviceMetrics(data.device_id, data.metrics, data.timestamp);
+            // Также обновляем данные в devices объекте
+            if (devices[data.device_id]) {
+                devices[data.device_id].last_metrics = data.metrics;
+            }
             break;
 
         case 'extended_statuses':
@@ -926,6 +930,22 @@ function renderDeviceCard(id, device) {
     const lastSeen = device.last_seen ? new Date(device.last_seen * 1000).toLocaleString() : 'Never';
     const capabilities = device.capabilities || [];
     const isOnline = device.status === 'online';
+    const metrics = device.last_metrics || {};
+    const extended = extendedStatuses[id] || {};
+    const substatus = extended.substatus || device.substatus || '';
+
+    // Формируем HTML метрик
+    let metricsHtml = '';
+    if (isOnline && Object.keys(metrics).length > 0) {
+        metricsHtml = '<div class="device-metrics"><div class="metrics-row">';
+        if (metrics.cpu !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-microchip"></i> CPU: ${metrics.cpu}%</span>`;
+        if (metrics.memory_percent !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-memory"></i> RAM: ${metrics.memory_percent}%</span>`;
+        if (metrics.disk_percent !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-hdd"></i> Disk: ${metrics.disk_percent}%</span>`;
+        if (metrics.temperature !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-thermometer-half"></i> ${metrics.temperature}°C</span>`;
+        if (metrics.humidity !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-tint"></i> ${metrics.humidity}%</span>`;
+        if (metrics.battery !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-battery-${metrics.battery > 75 ? 'full' : (metrics.battery > 50 ? 'half' : 'quarter')}"></i> ${metrics.battery}%</span>`;
+        metricsHtml += '</div></div>';
+    }
     
     return `
         <div class="device-card ${device.status}" data-device-id="${id}">
@@ -933,10 +953,16 @@ function renderDeviceCard(id, device) {
                 <div class="device-icon">
                     <i class="fas ${getDeviceIcon(device.type)}"></i>
                 </div>
-                <span class="status-badge ${device.status}">${device.status}</span>
+                <div class="device-status-container">
+                    <span class="status-badge ${device.status}">${device.status}</span>
+                    ${substatus && substatus !== device.status ? `<span class="substatus-badge" style="background: ${getSubstatusColor(substatus)}20; color: ${getSubstatusColor(substatus)}">
+                        <i class="fas ${getSubstatusIcon(substatus)}"></i> ${substatus}
+                    </span>` : ''}
+                </div>
             </div>
             <div class="device-id"><code>${escapeHtml(id)}</code></div>
             <div class="device-type">${escapeHtml(device.type)}</div>
+            ${metricsHtml}
             <div class="device-last-seen"><i class="fas fa-clock"></i> Last seen: ${lastSeen}</div>
             
             <div class="card-actions">
@@ -2534,30 +2560,33 @@ function getSubstatusColor(substatus) {
 // ==================== НОВЫЕ ФУНКЦИИ ДЛЯ МЕТРИК ====================
 
 function updateDeviceMetrics(deviceId, metrics, timestamp) {
-    if (!deviceMetricsHistory[deviceId]) {
-        deviceMetricsHistory[deviceId] = [];
-    }
-    
-    deviceMetricsHistory[deviceId].push({
-        timestamp: timestamp,
-        metrics: metrics
-    });
-    
-    // Храним только последние 100 записей
-    if (deviceMetricsHistory[deviceId].length > 100) {
-        deviceMetricsHistory[deviceId].shift();
-    }
-    
-    // Обновляем отображение метрик в карточке
-    const card = document.querySelector(`.device-card[data-device-id="${deviceId}"]`);
-    if (card) {
-        updateMetricsDisplay(card, deviceId, metrics);
-    }
-    
-    // Обновляем графики если открыты
-    const modal = document.getElementById('metricsModal');
-    if (modal && modal.style.display === 'block' && modal.dataset.deviceId === deviceId) {
-        updateMetricsChart(deviceId);
+    // Сохраняем метрики в глобальном объекте devices
+    if (devices[deviceId]) {
+        devices[deviceId].last_metrics = metrics;
+        devices[deviceId].last_metrics_time = timestamp;
+        
+        // Обновляем карточку устройства
+        const card = document.querySelector(`.device-card[data-device-id="${deviceId}"]`);
+        if (card) {
+            // Обновляем отображение метрик
+            let metricsDiv = card.querySelector('.device-metrics');
+            if (!metricsDiv) {
+                const deviceTypeDiv = card.querySelector('.device-type');
+                metricsDiv = document.createElement('div');
+                metricsDiv.className = 'device-metrics';
+                deviceTypeDiv.after(metricsDiv);
+            }
+            
+            let metricsHtml = '<div class="metrics-row">';
+            if (metrics.cpu !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-microchip"></i> CPU: ${metrics.cpu}%</span>`;
+            if (metrics.memory_percent !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-memory"></i> RAM: ${metrics.memory_percent}%</span>`;
+            if (metrics.disk_percent !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-hdd"></i> Disk: ${metrics.disk_percent}%</span>`;
+            if (metrics.temperature !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-thermometer-half"></i> ${metrics.temperature}°C</span>`;
+            if (metrics.humidity !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-tint"></i> ${metrics.humidity}%</span>`;
+            metricsHtml += '</div>';
+            
+            metricsDiv.innerHTML = metricsHtml || '<span class="metric-badge">No metrics yet</span>';
+        }
     }
 }
 
