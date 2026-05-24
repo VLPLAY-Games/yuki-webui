@@ -574,6 +574,57 @@ function initTheme() {
             showToast(`Theme changed to ${currentTheme}`, 'success');
         });
     }
+    
+    // Handle collapsed sidebar theme icons click
+    function setupCollapsedThemeIcons() {
+        const sunIcon = document.querySelector('.sidebar.collapsed .theme-toggle .fa-sun');
+        const moonIcon = document.querySelector('.sidebar.collapsed .theme-toggle .fa-moon');
+        
+        if (sunIcon && moonIcon) {
+            // Remove existing listeners to avoid duplicates
+            const newSun = sunIcon.cloneNode(true);
+            const newMoon = moonIcon.cloneNode(true);
+            sunIcon.parentNode.replaceChild(newSun, sunIcon);
+            moonIcon.parentNode.replaceChild(newMoon, moonIcon);
+            
+            newSun.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (currentTheme !== 'light') {
+                    currentTheme = 'light';
+                    document.documentElement.setAttribute('data-theme', 'light');
+                    localStorage.setItem('theme', 'light');
+                    const toggle = document.getElementById('themeToggle');
+                    if (toggle) toggle.checked = true;
+                    showToast('Theme changed to light', 'success');
+                }
+            });
+            
+            newMoon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (currentTheme !== 'dark') {
+                    currentTheme = 'dark';
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                    localStorage.setItem('theme', 'dark');
+                    const toggle = document.getElementById('themeToggle');
+                    if (toggle) toggle.checked = false;
+                    showToast('Theme changed to dark', 'success');
+                }
+            });
+        }
+    }
+    
+    // Run initially and when sidebar collapse state changes
+    setupCollapsedThemeIcons();
+    
+    // Watch for sidebar collapse changes
+    const observer = new MutationObserver(() => {
+        setupCollapsedThemeIcons();
+    });
+    
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar) {
+        observer.observe(sidebar, { attributes: true, attributeFilter: ['class'] });
+    }
 }
 
 // ==================== EVENT LISTENERS ====================

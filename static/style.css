@@ -71,13 +71,63 @@ body {
 .sidebar.collapsed .nav-item span,
 .sidebar.collapsed .badge,
 .sidebar.collapsed .user-info span,
-.sidebar.collapsed .theme-toggle span {
+.sidebar.collapsed .theme-toggle span,
+.sidebar.collapsed .connection-status span,
+.sidebar.collapsed .user-info .logout-btn span {
     display: none;
 }
 
 .sidebar.collapsed .nav-item {
     justify-content: center;
     padding: 12px;
+}
+
+.sidebar.collapsed .sidebar-footer {
+    align-items: center;
+    padding: 20px 5px;
+    gap: 12px;
+}
+
+.sidebar.collapsed .connection-status {
+    justify-content: center;
+    padding: 6px;
+    width: 100%;
+}
+
+.sidebar.collapsed .connection-status i {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.sidebar.collapsed .theme-toggle {
+    justify-content: center;
+    width: 100%;
+}
+
+.sidebar.collapsed .theme-toggle .switch {
+    margin: 0;
+}
+
+.sidebar.collapsed .user-info {
+    justify-content: center;
+    padding: 6px;
+    width: 100%;
+    gap: 8px;
+}
+
+.sidebar.collapsed .user-info i:first-child {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.sidebar.collapsed .logout-btn {
+    margin: 0;
+    padding: 0;
+}
+
+.sidebar.collapsed .logout-btn i {
+    margin: 0;
+    font-size: 1rem;
 }
 
 .sidebar-header {
@@ -2264,4 +2314,83 @@ input[type="range"]::-webkit-slider-thumb:hover {
     .empty-widgets {
         grid-column: span 1 !important;
     }
+}
+
+/* Make theme toggle clickable in collapsed sidebar */
+.sidebar.collapsed .theme-toggle {
+    cursor: pointer;
+}
+
+.sidebar.collapsed .theme-toggle .switch {
+    display: inline-block !important;
+    width: 40px !important;
+    height: 20px !important;
+    cursor: pointer;
+}
+
+.sidebar.collapsed .theme-toggle .switch input {
+    cursor: pointer;
+    opacity: 0;
+    width: 40px;
+    height: 20px;
+    position: absolute;
+    z-index: 2;
+}
+
+.sidebar.collapsed .theme-toggle .slider {
+    width: 40px !important;
+    height: 20px !important;
+}
+
+/* Fix theme toggle in collapsed sidebar - use icons instead of switch */
+.sidebar.collapsed .theme-toggle .switch {
+    display: none !important;
+}
+
+.sidebar.collapsed .theme-toggle {
+    justify-content: center;
+    gap: 8px;
+}
+
+.sidebar.collapsed .theme-toggle i {
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 5px;
+    border-radius: 8px;
+    transition: var(--transition);
+}
+
+.sidebar.collapsed .theme-toggle i:hover {
+    background: var(--bg-tertiary);
+    transform: scale(1.1);
+}
+
+/* Show/hide appropriate icon based on theme */
+[data-theme="dark"] .sidebar.collapsed .theme-toggle .fa-sun {
+    display: inline-block !important;
+    opacity: 0.7;
+}
+
+[data-theme="dark"] .sidebar.collapsed .theme-toggle .fa-moon {
+    display: inline-block !important;
+    opacity: 1;
+}
+
+[data-theme="light"] .sidebar.collapsed .theme-toggle .fa-sun {
+    display: inline-block !important;
+    opacity: 1;
+}
+
+[data-theme="light"] .sidebar.collapsed .theme-toggle .fa-moon {
+    display: inline-block !important;
+    opacity: 0.7;
+}
+
+/* Fix for normal sidebar (non-collapsed) */
+.sidebar:not(.collapsed) .theme-toggle .switch {
+    display: inline-block !important;
+}
+
+.sidebar:not(.collapsed) .theme-toggle i {
+    font-size: 0.9rem;
 }
