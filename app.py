@@ -284,5 +284,25 @@ def device_status_update():
         update_device_uptime(device_id, status)
     return jsonify({'success': True})
 
+@app.route('/api/system/metrics')
+def system_metrics_api():
+    """API для получения системных метрик"""
+    import psutil
+    try:
+        metrics = {
+            'cpu_percent': psutil.cpu_percent(interval=1),
+            'memory_percent': psutil.virtual_memory().percent,
+            'memory_used': psutil.virtual_memory().used,
+            'memory_total': psutil.virtual_memory().total,
+            'disk_percent': psutil.disk_usage('/').percent,
+            'disk_used': psutil.disk_usage('/').used,
+            'disk_total': psutil.disk_usage('/').total,
+            'uptime': time.time() - psutil.boot_time(),
+            'timestamp': time.time()
+        }
+        return jsonify(metrics)
+    except ImportError:
+        return jsonify({'error': 'psutil not installed'}), 500
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

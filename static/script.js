@@ -1627,13 +1627,19 @@ function renderWidget(widget) {
     const icons = {
         stats: 'fa-chart-pie',
         token: 'fa-key',
-        recent_commands: 'fa-history'
+        recent_commands: 'fa-history',
+        system_health: 'fa-heartbeat',
+        clock_calendar: 'fa-calendar-alt',
+        server_uptime: 'fa-server'
     };
     
     const titles = {
         stats: 'Statistics',
         token: 'Token Info',
-        recent_commands: 'Recent Commands'
+        recent_commands: 'Recent Commands',
+        system_health: 'System Health',
+        clock_calendar: 'Clock & Calendar',
+        server_uptime: 'Server Uptime'
     };
     
     return `
@@ -1658,6 +1664,10 @@ function renderWidget(widget) {
 
 async function removeWidget(widgetId) {
     if (confirm('Remove this widget?')) {
+        const widget = widgets.find(w => w.id === widgetId);
+        if (widget && widget.interval) {
+            clearInterval(widget.interval);
+        }
         widgets = widgets.filter(w => w.id !== widgetId);
         await saveWidgets();
         renderWidgets();
@@ -1676,15 +1686,16 @@ function showAddWidgetModal() {
     modal.className = 'modal';
     modal.id = 'addWidgetModal';
     modal.innerHTML = `
-        <div class="modal-content" style="max-width: 450px;">
+        <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header">
                 <h3><i class="fas fa-plus-circle" style="color: var(--accent-primary);"></i> Add Widget</h3>
                 <button class="modal-close">&times;</button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
                 <div class="form-group">
                     <label><i class="fas fa-chart-simple"></i> Widget Type</label>
                     <div class="widget-type-options" style="display: flex; flex-direction: column; gap: 10px;">
+                        <!-- Statistics Widget -->
                         <label class="widget-option" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
                             <input type="radio" name="widgetType" value="stats" checked style="width: 18px; height: 18px; cursor: pointer;">
                             <i class="fas fa-chart-pie" style="font-size: 1.5rem; color: var(--accent-primary);"></i>
@@ -1693,6 +1704,8 @@ function showAddWidgetModal() {
                                 <div style="font-size: 0.7rem; color: var(--text-muted);">Shows total, online and pending device counts</div>
                             </div>
                         </label>
+                        
+                        <!-- Token Info Widget -->
                         <label class="widget-option" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
                             <input type="radio" name="widgetType" value="token" style="width: 18px; height: 18px; cursor: pointer;">
                             <i class="fas fa-key" style="font-size: 1.5rem; color: var(--success);"></i>
@@ -1701,6 +1714,8 @@ function showAddWidgetModal() {
                                 <div style="font-size: 0.7rem; color: var(--text-muted);">Displays current token creation and expiration</div>
                             </div>
                         </label>
+                        
+                        <!-- Recent Commands Widget -->
                         <label class="widget-option" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
                             <input type="radio" name="widgetType" value="recent_commands" style="width: 18px; height: 18px; cursor: pointer;">
                             <i class="fas fa-history" style="font-size: 1.5rem; color: var(--warning);"></i>
@@ -1709,8 +1724,39 @@ function showAddWidgetModal() {
                                 <div style="font-size: 0.7rem; color: var(--text-muted);">Shows last 5 executed commands</div>
                             </div>
                         </label>
+                        
+                        <!-- System Health Widget -->
+                        <label class="widget-option" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
+                            <input type="radio" name="widgetType" value="system_health" style="width: 18px; height: 18px; cursor: pointer;">
+                            <i class="fas fa-heartbeat" style="font-size: 1.5rem; color: #ef4444;"></i>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600;">System Health Widget</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">Shows CPU, RAM and Disk usage of Core server</div>
+                            </div>
+                        </label>
+                        
+                        <!-- Clock & Calendar Widget -->
+                        <label class="widget-option" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
+                            <input type="radio" name="widgetType" value="clock_calendar" style="width: 18px; height: 18px; cursor: pointer;">
+                            <i class="fas fa-calendar-alt" style="font-size: 1.5rem; color: #10b981;"></i>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600;">Clock & Calendar Widget</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">Shows current time, date and monthly calendar</div>
+                            </div>
+                        </label>
+                        
+                        <!-- Server Uptime Widget -->
+                        <label class="widget-option" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
+                            <input type="radio" name="widgetType" value="server_uptime" style="width: 18px; height: 18px; cursor: pointer;">
+                            <i class="fas fa-server" style="font-size: 1.5rem; color: #8b5cf6;"></i>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600;">Server Uptime Widget</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">Shows system uptime and start time</div>
+                            </div>
+                        </label>
                     </div>
                 </div>
+                
                 <div class="form-group" style="margin-top: 20px;">
                     <label><i class="fas fa-arrows-left-right"></i> Widget Width</label>
                     <div style="display: flex; gap: 10px; align-items: center;">
@@ -1723,6 +1769,12 @@ function showAddWidgetModal() {
                             <div id="widthIndicator" style="width: 50%; height: 100%; background: var(--accent-primary); border-radius: 2px;"></div>
                         </div>
                         <span style="font-size: 0.7rem; color: var(--text-muted);">Wide</span>
+                    </div>
+                </div>
+                
+                <div class="form-group" style="margin-top: 15px; padding: 10px; background: var(--bg-tertiary); border-radius: 10px;">
+                    <div style="font-size: 0.7rem; color: var(--text-muted); text-align: center;">
+                        <i class="fas fa-info-circle"></i> Tip: Widgets can be reordered by dragging
                     </div>
                 </div>
             </div>
@@ -1777,7 +1829,10 @@ function showAddWidgetModal() {
     
     // Закрытие модала
     const closeModal = () => {
-        modal.remove();
+        // Очищаем интервалы если есть
+        if (modal.remove) {
+            modal.remove();
+        }
     };
     
     modal.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
@@ -1800,17 +1855,35 @@ function showAddWidgetModal() {
             const width = parseInt(document.getElementById('newWidgetWidth')?.value || 2);
             const newId = `${type}_${Date.now()}`;
             
+            // Определяем высоту виджета в зависимости от типа
+            let height = 1;
+            if (type === 'recent_commands' || type === 'system_health' || type === 'clock_calendar') {
+                height = 2;
+            } else if (type === 'server_uptime') {
+                height = 1;
+            }
+            
             widgets.push({
                 id: newId,
                 type: type,
                 w: Math.min(Math.max(width, 1), 4),
-                h: type === 'recent_commands' ? 2 : 1
+                h: height
             });
             
             await saveWidgets();
             renderWidgets();
             closeModal();
-            showToast(`Widget "${type.replace('_', ' ')}" added successfully`, 'success');
+            
+            // Показываем разное сообщение в зависимости от типа
+            const typeNames = {
+                'stats': 'Statistics',
+                'token': 'Token Info',
+                'recent_commands': 'Recent Commands',
+                'system_health': 'System Health',
+                'clock_calendar': 'Clock & Calendar',
+                'server_uptime': 'Server Uptime'
+            };
+            showToast(`"${typeNames[type]}" widget added successfully`, 'success');
         });
     }
 }
@@ -1888,12 +1961,65 @@ function loadWidgetContent(widget) {
             break;
         case 'token':
             container.innerHTML = `<div id="widgetTokenInfo" class="loading-placeholder">Loading token info...</div>`;
-            // Запрашиваем токен сразу
             requestTokenInfo();
             break;
         case 'recent_commands':
             container.innerHTML = `<div id="widgetRecentCommands" class="recent-commands-list"></div>`;
             updateRecentCommandsWidget();
+            break;
+        case 'system_health':
+            container.innerHTML = `
+                <div class="system-health-widget">
+                    <div class="health-metric">
+                        <div class="health-label"><i class="fas fa-microchip"></i> CPU</div>
+                        <div class="health-value" id="health-cpu">--%</div>
+                        <div class="health-bar"><div class="health-progress" id="health-cpu-bar" style="width: 0%"></div></div>
+                    </div>
+                    <div class="health-metric">
+                        <div class="health-label"><i class="fas fa-memory"></i> RAM</div>
+                        <div class="health-value" id="health-ram">--%</div>
+                        <div class="health-bar"><div class="health-progress" id="health-ram-bar" style="width: 0%"></div></div>
+                    </div>
+                    <div class="health-metric">
+                        <div class="health-label"><i class="fas fa-hdd"></i> Disk</div>
+                        <div class="health-value" id="health-disk">--%</div>
+                        <div class="health-bar"><div class="health-progress" id="health-disk-bar" style="width: 0%"></div></div>
+                    </div>
+                </div>
+            `;
+            loadSystemHealthWidget();
+            // Обновляем каждые 5 секунд
+            if (widget.interval) clearInterval(widget.interval);
+            widget.interval = setInterval(() => loadSystemHealthWidget(), 5000);
+            break;
+        case 'clock_calendar':
+            container.innerHTML = `
+                <div class="clock-calendar-widget">
+                    <div class="clock-time" id="clock-time">--:--:--</div>
+                    <div class="clock-date" id="clock-date">--</div>
+                    <div class="calendar-grid" id="calendar-grid"></div>
+                </div>
+            `;
+            updateClockWidget();
+            if (widget.interval) clearInterval(widget.interval);
+            widget.interval = setInterval(() => updateClockWidget(), 1000);
+            break;
+        case 'server_uptime':
+            container.innerHTML = `
+                <div class="server-uptime-widget">
+                    <div class="uptime-icon"><i class="fas fa-server"></i></div>
+                    <div class="uptime-info">
+                        <div class="uptime-label">System Uptime</div>
+                        <div class="uptime-value" id="server-uptime-value">--d --h --m</div>
+                    </div>
+                    <div class="uptime-detail">
+                        <div class="uptime-stat"><span>Started:</span> <span id="server-start-time">--</span></div>
+                    </div>
+                </div>
+            `;
+            loadServerUptimeWidget();
+            if (widget.interval) clearInterval(widget.interval);
+            widget.interval = setInterval(() => loadServerUptimeWidget(), 60000);
             break;
     }
 }
@@ -1946,6 +2072,151 @@ function updateRecentCommandsWidget() {
             <span class="history-command">${escapeHtml(cmd.command)}</span>
         </div>
     `).join('');
+}
+
+// ==================== SYSTEM HEALTH WIDGET ====================
+async function loadSystemHealthWidget() {
+    try {
+        const response = await fetch('/api/system/metrics');
+        const data = await response.json();
+        
+        if (data.error) {
+            document.querySelectorAll('#health-cpu, #health-ram, #health-disk').forEach(el => {
+                if (el) el.textContent = 'N/A';
+            });
+            return;
+        }
+        
+        const cpu = Math.round(data.cpu_percent);
+        const ram = Math.round(data.memory_percent);
+        const disk = Math.round(data.disk_percent);
+        
+        const cpuEl = document.getElementById('health-cpu');
+        const ramEl = document.getElementById('health-ram');
+        const diskEl = document.getElementById('health-disk');
+        const cpuBar = document.getElementById('health-cpu-bar');
+        const ramBar = document.getElementById('health-ram-bar');
+        const diskBar = document.getElementById('health-disk-bar');
+        
+        if (cpuEl) cpuEl.textContent = `${cpu}%`;
+        if (ramEl) ramEl.textContent = `${ram}%`;
+        if (diskEl) diskEl.textContent = `${disk}%`;
+        if (cpuBar) cpuBar.style.width = `${cpu}%`;
+        if (ramBar) ramBar.style.width = `${ram}%`;
+        if (diskBar) diskBar.style.width = `${disk}%`;
+        
+        // Color coding
+        const setBarColor = (bar, value) => {
+            if (bar) {
+                if (value > 80) bar.style.background = 'var(--danger)';
+                else if (value > 60) bar.style.background = 'var(--warning)';
+                else bar.style.background = 'var(--success)';
+            }
+        };
+        
+        setBarColor(cpuBar, cpu);
+        setBarColor(ramBar, ram);
+        setBarColor(diskBar, disk);
+        
+    } catch (e) {
+        console.error('Failed to load system health:', e);
+    }
+}
+
+// ==================== CLOCK & CALENDAR WIDGET ====================
+function updateClockWidget() {
+    const now = new Date();
+    
+    const timeEl = document.getElementById('clock-time');
+    const dateEl = document.getElementById('clock-date');
+    
+    if (timeEl) {
+        timeEl.textContent = now.toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit' 
+        });
+    }
+    
+    if (dateEl) {
+        dateEl.textContent = now.toLocaleDateString('en-US', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+        });
+    }
+    
+    // Update calendar grid
+    const calendarGrid = document.getElementById('calendar-grid');
+    if (calendarGrid) {
+        const year = now.getFullYear();
+        const month = now.getMonth();
+        const firstDay = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const today = now.getDate();
+        
+        let html = '<div class="calendar-weekdays">';
+        const weekdays = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+        weekdays.forEach(day => {
+            html += `<span class="calendar-weekday">${day}</span>`;
+        });
+        html += '</div><div class="calendar-days">';
+        
+        // Empty cells for days before month starts
+        for (let i = 0; i < firstDay; i++) {
+            html += '<span class="calendar-day empty"></span>';
+        }
+        
+        // Days of month
+        for (let d = 1; d <= daysInMonth; d++) {
+            const isToday = d === today;
+            html += `<span class="calendar-day ${isToday ? 'today' : ''}">${d}</span>`;
+        }
+        
+        html += '</div>';
+        calendarGrid.innerHTML = html;
+    }
+}
+
+// ==================== SERVER UPTIME WIDGET ====================
+async function loadServerUptimeWidget() {
+    try {
+        const response = await fetch('/api/system/metrics');
+        const data = await response.json();
+        
+        if (data.error) {
+            const uptimeEl = document.getElementById('server-uptime-value');
+            if (uptimeEl) uptimeEl.textContent = 'N/A';
+            return;
+        }
+        
+        const uptimeSeconds = data.uptime;
+        const days = Math.floor(uptimeSeconds / 86400);
+        const hours = Math.floor((uptimeSeconds % 86400) / 3600);
+        const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+        
+        const uptimeEl = document.getElementById('server-uptime-value');
+        if (uptimeEl) {
+            if (days > 0) {
+                uptimeEl.textContent = `${days}d ${hours}h ${minutes}m`;
+            } else if (hours > 0) {
+                uptimeEl.textContent = `${hours}h ${minutes}m`;
+            } else {
+                uptimeEl.textContent = `${minutes}m`;
+            }
+        }
+        
+        // Calculate start time
+        const startTime = new Date(Date.now() - uptimeSeconds * 1000);
+        const startTimeEl = document.getElementById('server-start-time');
+        if (startTimeEl) {
+            startTimeEl.textContent = startTime.toLocaleString();
+        }
+        
+    } catch (e) {
+        console.error('Failed to load server uptime:', e);
+    }
 }
 
 function handleDragStart(e) {

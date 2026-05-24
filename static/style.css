@@ -2095,3 +2095,149 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .modal-footer .btn-secondary i {
     margin-right: 6px;
 }
+
+/* ==================== SYSTEM HEALTH WIDGET ==================== */
+.system-health-widget {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.health-metric {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.health-label {
+    width: 60px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.health-value {
+    width: 45px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    font-family: monospace;
+    text-align: right;
+}
+
+.health-bar {
+    flex: 1;
+    height: 8px;
+    background: var(--bg-tertiary);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.health-progress {
+    height: 100%;
+    border-radius: 10px;
+    transition: width 0.3s ease;
+    background: var(--success);
+}
+
+/* ==================== CLOCK & CALENDAR WIDGET ==================== */
+.clock-calendar-widget {
+    text-align: center;
+}
+
+.clock-time {
+    font-size: 2rem;
+    font-weight: 700;
+    font-family: 'Courier New', monospace;
+    color: var(--accent-primary);
+    margin-bottom: 5px;
+}
+
+.clock-date {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 15px;
+}
+
+.calendar-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    margin-bottom: 5px;
+}
+
+.calendar-weekday {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 5px;
+}
+
+.calendar-days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+}
+
+.calendar-day {
+    font-size: 0.75rem;
+    text-align: center;
+    padding: 6px 0;
+    border-radius: 8px;
+    color: var(--text-primary);
+}
+
+.calendar-day.empty {
+    color: var(--text-muted);
+    opacity: 0.3;
+}
+
+.calendar-day.today {
+    background: var(--accent-primary);
+    color: white;
+    font-weight: 600;
+}
+
+/* ==================== SERVER UPTIME WIDGET ==================== */
+.server-uptime-widget {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.uptime-icon {
+    font-size: 2rem;
+    color: var(--accent-primary);
+    margin-bottom: 10px;
+}
+
+.uptime-info {
+    margin-bottom: 15px;
+}
+
+.uptime-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.uptime-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    font-family: 'Courier New', monospace;
+    color: var(--success);
+}
+
+.uptime-detail {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+.uptime-stat {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
