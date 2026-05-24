@@ -1974,6 +1974,48 @@ function initModalHandlers() {
         if (confirmModal && e.target === confirmModal) confirmModal.style.display = 'none';
         if (authModal && e.target === authModal) authModal.style.display = 'none';
     };
+    initBroadcastModal();
+}
+
+function initBroadcastModal() {
+    const broadcastModal = document.getElementById('broadcastModal');
+    if (!broadcastModal) return;
+    
+    // Кнопки закрытия внутри модального окна
+    const closeButtons = broadcastModal.querySelectorAll('.modal-close, .modal-cancel');
+    closeButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            broadcastModal.style.display = 'none';
+        });
+    });
+    
+    // Клик по фону (overlay)
+    broadcastModal.addEventListener('click', (e) => {
+        if (e.target === broadcastModal) {
+            broadcastModal.style.display = 'none';
+        }
+    });
+    
+    // Кнопка отправки
+    const sendBtn = document.getElementById('sendBroadcastBtn');
+    if (sendBtn) {
+        // Удаляем старый обработчик, чтобы не было дублирования
+        const newSendBtn = sendBtn.cloneNode(true);
+        sendBtn.parentNode.replaceChild(newSendBtn, sendBtn);
+        newSendBtn.addEventListener('click', sendBroadcastCommand);
+    }
+    
+    // Кнопка Broadcast в хедере
+    const broadcastHeaderBtn = document.querySelector('.broadcast-btn');
+    if (broadcastHeaderBtn) {
+        const newHeaderBtn = broadcastHeaderBtn.cloneNode(true);
+        broadcastHeaderBtn.parentNode.replaceChild(newHeaderBtn, broadcastHeaderBtn);
+        newHeaderBtn.addEventListener('click', () => {
+            broadcastModal.style.display = 'block';
+        });
+    }
 }
 
 // ==================== BROADCAST ====================
