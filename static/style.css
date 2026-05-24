@@ -1838,3 +1838,95 @@ input:checked + .slider:before {
 .broadcast-btn:hover {
     background: linear-gradient(135deg, #e67e22, #d35400);
 }
+
+/* Расширенный статус */
+.device-status-container {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.substatus-badge {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Метрики устройства */
+.device-metrics {
+    margin: 10px 0;
+}
+
+.metrics-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.metric-badge {
+    background: var(--bg-tertiary);
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-secondary);
+}
+
+.metric-badge.success { color: var(--success); }
+.metric-badge.warning { color: var(--warning); }
+.metric-badge.danger { color: var(--danger); }
+
+/* Модальное окно метрик */
+.metrics-modal .modal-content {
+    max-width: 800px;
+}
+
+.metrics-period-selector {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.metrics-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.metrics-chart-container {
+    height: 300px;
+    margin-bottom: 20px;
+}
+
+.current-metrics {
+    background: var(--bg-tertiary);
+    border-radius: 12px;
+    padding: 12px;
+}
+
+.current-metrics-header {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.current-metrics-values {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.metric-value-badge {
+    background: var(--bg-secondary);
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-family: monospace;
+}

@@ -36,6 +36,11 @@ let settings = {
 // DOM Elements
 let sidebar, devicesContainer, historyList, logsContainer, searchInput;
 
+// Хранилище расширенных статусов и метрик
+let extendedStatuses = {};
+let deviceMetricsHistory = {};
+let metricsCharts = {};
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     // DOM references
@@ -501,6 +506,13 @@ function initEventListeners() {
             showToast('Token info copied to clipboard', 'success');
         }
     });
+
+    // Загрузка расширенных статусов при старте
+    setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'get_extended_statuses' }));
+        }
+    }, 30000); // Каждые 30 секунд
     
     // Modal handlers
     initModalHandlers();
@@ -763,6 +775,18 @@ function handleMessage(data) {
             break;
         case 'broadcast_result':
             showToast(`Broadcast sent to ${data.sent} devices`, 'success');
+            break;
+        case 'extended_status':
+            updateExtendedStatus(data.device_id, data.substatus, data.details);
+            break;
+
+        case 'metrics_update':
+            updateDeviceMetrics(data.device_id, data.metrics, data.timestamp);
+            break;
+
+        case 'extended_statuses':
+            extendedStatuses = data.statuses;
+            renderDevices(); // Перерендериваем
             break;
     }
 }
@@ -2461,4 +2485,475 @@ function initAdminListeners() {
             loadCommandStats(currentStatPeriod);
         });
     });
+}
+
+// ==================== НОВЫЕ ФУНКЦИИ ДЛЯ РАСШИРЕННОГО СТАТУСА ====================
+
+function updateExtendedStatus(deviceId, substatus, details) {
+    if (!extendedStatuses[deviceId]) {
+        extendedStatuses[deviceId] = {};
+    }
+    extendedStatuses[deviceId] = {
+        substatus: substatus,
+        details: details,
+        lastUpdate: Date.now()
+    };
+    
+    // Обновляем отображение устройства
+    const card = document.querySelector(`.device-card[data-device-id="${deviceId}"]`);
+    if (card) {
+        updateDeviceStatusDisplay(card, deviceId);
+    }
+}
+
+function getSubstatusIcon(substatus) {
+    const icons = {
+        'idle': 'fa-bed',
+        'working': 'fa-cogs',
+        'sleeping': 'fa-moon',
+        'charging': 'fa-battery-full',
+        'error': 'fa-exclamation-triangle',
+        'updating': 'fa-sync-alt',
+        'maintenance': 'fa-wrench'
+    };
+    return icons[substatus] || 'fa-info-circle';
+}
+
+function getSubstatusColor(substatus) {
+    const colors = {
+        'idle': 'var(--text-muted)',
+        'working': 'var(--success)',
+        'sleeping': 'var(--info)',
+        'charging': 'var(--success)',
+        'error': 'var(--danger)',
+        'updating': 'var(--warning)'
+    };
+    return colors[substatus] || 'var(--text-secondary)';
+}
+
+// ==================== НОВЫЕ ФУНКЦИИ ДЛЯ МЕТРИК ====================
+
+function updateDeviceMetrics(deviceId, metrics, timestamp) {
+    if (!deviceMetricsHistory[deviceId]) {
+        deviceMetricsHistory[deviceId] = [];
+    }
+    
+    deviceMetricsHistory[deviceId].push({
+        timestamp: timestamp,
+        metrics: metrics
+    });
+    
+    // Храним только последние 100 записей
+    if (deviceMetricsHistory[deviceId].length > 100) {
+        deviceMetricsHistory[deviceId].shift();
+    }
+    
+    // Обновляем отображение метрик в карточке
+    const card = document.querySelector(`.device-card[data-device-id="${deviceId}"]`);
+    if (card) {
+        updateMetricsDisplay(card, deviceId, metrics);
+    }
+    
+    // Обновляем графики если открыты
+    const modal = document.getElementById('metricsModal');
+    if (modal && modal.style.display === 'block' && modal.dataset.deviceId === deviceId) {
+        updateMetricsChart(deviceId);
+    }
+}
+
+function updateMetricsDisplay(card, deviceId, metrics) {
+    let metricsDiv = card.querySelector('.device-metrics');
+    if (!metricsDiv) {
+        metricsDiv = document.createElement('div');
+        metricsDiv.className = 'device-metrics';
+        card.querySelector('.device-type').after(metricsDiv);
+    }
+    
+    let html = '<div class="metrics-row">';
+    
+    // CPU
+    if (metrics.cpu !== undefined) {
+        html += `<span class="metric-badge"><i class="fas fa-microchip"></i> ${metrics.cpu}%</span>`;
+    }
+    
+    // Температура
+    if (metrics.temperature !== undefined) {
+        html += `<span class="metric-badge"><i class="fas fa-thermometer-half"></i> ${metrics.temperature}°C</span>`;
+    }
+    
+    // Влажность
+    if (metrics.humidity !== undefined) {
+        html += `<span class="metric-badge"><i class="fas fa-tint"></i> ${metrics.humidity}%</span>`;
+    }
+    
+    // Батарея
+    if (metrics.battery !== undefined) {
+        const batteryColor = metrics.battery < 20 ? 'danger' : (metrics.battery < 50 ? 'warning' : 'success');
+        html += `<span class="metric-badge ${batteryColor}"><i class="fas fa-battery-${metrics.battery > 75 ? 'full' : (metrics.battery > 50 ? 'half' : 'quarter')}"></i> ${metrics.battery}%</span>`;
+    }
+    
+    // Уровень воды (для увлажнителя)
+    if (metrics.water_level !== undefined) {
+        html += `<span class="metric-badge"><i class="fas fa-water"></i> ${metrics.water_level}%</span>`;
+    }
+    
+    // Память
+    if (metrics.memory_percent !== undefined) {
+        html += `<span class="metric-badge"><i class="fas fa-memory"></i> ${metrics.memory_percent}%</span>`;
+    }
+    
+    html += '</div>';
+    metricsDiv.innerHTML = html;
+}
+
+// ==================== ФУНКЦИИ ДЛЯ СВЯЗИ УСТРОЙСТВО->УСТРОЙСТВО ====================
+
+function sendDeviceToDevice(fromDeviceId, toDeviceId, command, payload, requireResponse = false) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        showToast('Not connected to Core', 'error');
+        return;
+    }
+    
+    const msgId = generateUUID();
+    const msg = {
+        type: 'device_to_device',
+        from_device_id: fromDeviceId,
+        to_device_id: toDeviceId,
+        command: command,
+        payload: payload,
+        require_response: requireResponse,
+        id: msgId
+    };
+    
+    ws.send(JSON.stringify(msg));
+    addLogEntry('device_to_device', `${fromDeviceId} → ${toDeviceId}: ${command}`);
+    showToast(`Command sent to ${toDeviceId}`, 'info');
+    
+    return msgId;
+}
+
+function showDeviceToDeviceModal(deviceId) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'd2dModal';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3><i class="fas fa-exchange-alt"></i> Send to Device</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>From Device</label>
+                    <input type="text" id="d2dFromDevice" readonly value="${deviceId}">
+                </div>
+                <div class="form-group">
+                    <label>Target Device</label>
+                    <select id="d2dTargetDevice" class="form-control">
+                        ${Object.entries(devices)
+                            .filter(([id, d]) => id !== deviceId && d.status === 'online')
+                            .map(([id, d]) => `<option value="${id}">${id} (${d.type})</option>`)
+                            .join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Command</label>
+                    <input type="text" id="d2dCommand" placeholder="e.g., get_status, reboot">
+                </div>
+                <div class="form-group">
+                    <label>Payload (JSON)</label>
+                    <textarea id="d2dPayload" rows="3" placeholder="{}"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="d2dRequireResponse">
+                        <span>Require response</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="sendD2DBtn" class="btn-primary">Send</button>
+                <button class="btn-secondary modal-cancel">Cancel</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.style.display = 'block';
+    
+    modal.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
+        btn.addEventListener('click', () => modal.remove());
+    });
+    
+    document.getElementById('sendD2DBtn').addEventListener('click', () => {
+        const targetDevice = document.getElementById('d2dTargetDevice').value;
+        const command = document.getElementById('d2dCommand').value.trim();
+        let payload = {};
+        try {
+            payload = JSON.parse(document.getElementById('d2dPayload').value);
+        } catch (e) {
+            showToast('Invalid JSON payload', 'error');
+            return;
+        }
+        const requireResponse = document.getElementById('d2dRequireResponse').checked;
+        
+        if (!targetDevice || !command) {
+            showToast('Target device and command are required', 'warning');
+            return;
+        }
+        
+        sendDeviceToDevice(deviceId, targetDevice, command, payload, requireResponse);
+        modal.remove();
+    });
+}
+
+// ==================== МОДАЛЬНОЕ ОКНО МЕТРИК ====================
+
+function showMetricsModal(deviceId) {
+    const modal = document.createElement('div');
+    modal.className = 'modal metrics-modal';
+    modal.id = 'metricsModal';
+    modal.dataset.deviceId = deviceId;
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3><i class="fas fa-chart-line"></i> Metrics: ${deviceId}</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="metrics-period-selector">
+                    <button class="period-btn active" data-hours="1">Last Hour</button>
+                    <button class="period-btn" data-hours="6">6 Hours</button>
+                    <button class="period-btn" data-hours="24">24 Hours</button>
+                </div>
+                <div class="metrics-selector">
+                    <label class="checkbox-label">
+                        <input type="checkbox" class="metric-toggle" data-metric="cpu"> CPU
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" class="metric-toggle" data-metric="temperature"> Temperature
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" class="metric-toggle" data-metric="humidity"> Humidity
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" class="metric-toggle" data-metric="battery"> Battery
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" class="metric-toggle" data-metric="memory_percent"> Memory
+                    </label>
+                </div>
+                <div class="metrics-chart-container">
+                    <canvas id="metricsChart"></canvas>
+                </div>
+                <div class="current-metrics" id="currentMetrics"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="refreshMetricsBtn" class="btn-secondary">
+                    <i class="fas fa-sync-alt"></i> Request Fresh Metrics
+                </button>
+                <button class="btn-secondary modal-cancel">Close</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.style.display = 'block';
+    
+    modal.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (metricsCharts[deviceId]) {
+                metricsCharts[deviceId].destroy();
+                delete metricsCharts[deviceId];
+            }
+            modal.remove();
+        });
+    });
+    
+    // Загружаем метрики
+    loadMetricsHistory(deviceId, 1);
+    
+    // Периоды
+    modal.querySelectorAll('.period-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            modal.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const hours = parseInt(btn.dataset.hours);
+            loadMetricsHistory(deviceId, hours);
+        });
+    });
+    
+    // Toggle метрик
+    modal.querySelectorAll('.metric-toggle').forEach(toggle => {
+        toggle.addEventListener('change', () => {
+            loadMetricsHistory(deviceId, parseInt(modal.querySelector('.period-btn.active').dataset.hours));
+        });
+    });
+    
+    // Запрос свежих метрик
+    document.getElementById('refreshMetricsBtn').addEventListener('click', () => {
+        requestDeviceMetrics(deviceId);
+        setTimeout(() => {
+            loadMetricsHistory(deviceId, parseInt(modal.querySelector('.period-btn.active').dataset.hours));
+        }, 2000);
+    });
+}
+
+function loadMetricsHistory(deviceId, hours) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    
+    const activeMetrics = Array.from(document.querySelectorAll('.metric-toggle:checked'))
+        .map(cb => cb.dataset.metric);
+    
+    ws.send(JSON.stringify({
+        type: 'get_device_metrics',
+        device_id: deviceId,
+        hours: hours,
+        metrics: activeMetrics
+    }));
+    
+    // Временный обработчик
+    const handler = (data) => {
+        if (data.type === 'device_metrics' && data.device_id === deviceId) {
+            updateMetricsChart(deviceId, data.metrics);
+            ws.removeEventListener('message', handler);
+        }
+    };
+    ws.addEventListener('message', handler);
+    
+    // Таймаут
+    setTimeout(() => ws.removeEventListener('message', handler), 5000);
+}
+
+function updateMetricsChart(deviceId, metricsData) {
+    const chartCanvas = document.getElementById('metricsChart');
+    if (!chartCanvas) return;
+    
+    if (metricsCharts[deviceId]) {
+        metricsCharts[deviceId].destroy();
+    }
+    
+    const activeMetrics = Array.from(document.querySelectorAll('.metric-toggle:checked'))
+        .map(cb => cb.dataset.metric);
+    
+    if (activeMetrics.length === 0 || !metricsData || metricsData.length === 0) {
+        chartCanvas.getContext('2d').clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+        return;
+    }
+    
+    const timestamps = metricsData.map(m => new Date(m.timestamp * 1000).toLocaleTimeString());
+    const datasets = [];
+    const colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+    
+    activeMetrics.forEach((metric, idx) => {
+        const values = metricsData.map(m => m.metrics[metric]);
+        if (values.some(v => v !== undefined)) {
+            datasets.push({
+                label: metric.replace('_', ' ').toUpperCase(),
+                data: values,
+                borderColor: colors[idx % colors.length],
+                backgroundColor: 'transparent',
+                tension: 0.4,
+                fill: false
+            });
+        }
+    });
+    
+    const ctx = chartCanvas.getContext('2d');
+    metricsCharts[deviceId] = new Chart(ctx, {
+        type: 'line',
+        data: { labels: timestamps, datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { position: 'top' },
+                tooltip: { mode: 'index', intersect: false }
+            },
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+    
+    // Показываем последние метрики
+    const lastMetrics = metricsData[metricsData.length - 1];
+    if (lastMetrics) {
+        const container = document.getElementById('currentMetrics');
+        if (container) {
+            container.innerHTML = `
+                <div class="current-metrics-header">Latest Metrics (${new Date(lastMetrics.timestamp * 1000).toLocaleString()}):</div>
+                <div class="current-metrics-values">
+                    ${Object.entries(lastMetrics.metrics).map(([k, v]) => 
+                        `<span class="metric-value-badge">${k}: ${typeof v === 'number' ? v.toFixed(1) : v}</span>`
+                    ).join('')}
+                </div>
+            `;
+        }
+    }
+}
+
+function requestDeviceMetrics(deviceId) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({
+        type: 'request_device_metrics',
+        device_id: deviceId,
+        metric_types: null
+    }));
+    showToast(`Metrics requested from ${deviceId}`, 'info');
+}
+
+// ==================== ОБНОВЛЕНИЕ ОТОБРАЖЕНИЯ КАРТОЧКИ УСТРОЙСТВА ====================
+
+function updateDeviceStatusDisplay(card, deviceId) {
+    const device = devices[deviceId];
+    const extended = extendedStatuses[deviceId];
+    
+    let statusHtml = `<span class="status-badge ${device?.status || 'offline'}">${device?.status || 'offline'}</span>`;
+    
+    if (extended && extended.substatus) {
+        statusHtml += `<span class="substatus-badge" style="background: ${getSubstatusColor(extended.substatus)}20; color: ${getSubstatusColor(extended.substatus)}">
+            <i class="fas ${getSubstatusIcon(extended.substatus)}"></i> ${extended.substatus}
+        </span>`;
+    }
+    
+    const header = card.querySelector('.card-header');
+    if (header) {
+        let statusDiv = header.querySelector('.device-status-container');
+        if (!statusDiv) {
+            statusDiv = document.createElement('div');
+            statusDiv.className = 'device-status-container';
+            header.appendChild(statusDiv);
+        }
+        statusDiv.innerHTML = statusHtml;
+    }
+}
+
+// ==================== ДОБАВЛЕНИЕ КНОПОК В КАРТОЧКИ УСТРОЙСТВ ====================
+
+function addDeviceActionButtons(card, deviceId) {
+    const actionsDiv = card.querySelector('.card-actions');
+    if (!actionsDiv) return;
+    
+    // Кнопка отправки другому устройству
+    if (!actionsDiv.querySelector('.d2d-btn')) {
+        const d2dBtn = document.createElement('button');
+        d2dBtn.className = 'btn-secondary d2d-btn';
+        d2dBtn.innerHTML = '<i class="fas fa-exchange-alt"></i> Send to Device';
+        d2dBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showDeviceToDeviceModal(deviceId);
+        });
+        actionsDiv.appendChild(d2dBtn);
+    }
+    
+    // Кнопка метрик
+    if (!actionsDiv.querySelector('.metrics-btn')) {
+        const metricsBtn = document.createElement('button');
+        metricsBtn.className = 'btn-secondary metrics-btn';
+        metricsBtn.innerHTML = '<i class="fas fa-chart-line"></i> Metrics';
+        metricsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showMetricsModal(deviceId);
+        });
+        actionsDiv.appendChild(metricsBtn);
+    }
 }
