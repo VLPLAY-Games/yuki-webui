@@ -1,9 +1,10 @@
-// script.js - Modern Dashboard with Settings
+// script.js - Modern Dashboard with Settings (Core only)
+// Виджеты вынесены в отдельные файлы в папке widgets/
 
 // State
 let ws = null;
 let reconnectTimer = null;
-let devices = {};
+window.devices = {};
 let currentView = 'dashboard';
 let currentFilter = 'all';
 let currentViewMode = 'grid';
@@ -14,6 +15,8 @@ let commandHistory = [];
 let eventLogs = [];
 let notifiedPendingIds = new Set();
 let manualDisconnect = false;
+let device_groups = {};
+let device_tags = {};
 
 // Settings
 let settings = {
@@ -43,47 +46,378 @@ let metricsCharts = {};
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
-    // DOM references
     sidebar = document.getElementById('sidebar');
     devicesContainer = document.getElementById('devicesContainer');
     historyList = document.getElementById('historyList');
     logsContainer = document.getElementById('logsContainer');
     searchInput = document.getElementById('searchInput');
     
-    // Load settings
     loadSettings();
-    
-    // Initialize theme
     initTheme();
-    
-    // Event listeners
     initEventListeners();
     initSettingsListeners();
-    
-    // Connect WebSocket
     connectWebSocket();
-    
-    // Load saved history from localStorage
     loadStoredData();
-
-    loadWidgets();
     loadGroups();
     loadTags();
-
-    addAddWidgetButton();
-    requestTokenInfo();
-    setInterval(requestTokenInfo, 300000);
-
     initAdminListeners();
     
-    // Start periodic updates
     setInterval(updateDashboardStats, 1000);
     setInterval(updateServerInfo, 5000);
     setInterval(loadSystemMetrics, 10000);
     
-    // Update server info
     updateServerInfo();
+    
+    // Инициализация виджетов после загрузки
+    setTimeout(() => {
+        if (widgetManager) {
+            widgetManager.init('widgetGrid');
+            widgetManager.load();
+        }
+    }, 100);
 });
+
+// Добавьте эту функцию в script.js после функции loadSettings()
+
+function initSettingsListeners() {
+    // Save settings button
+    const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+    if (saveSettingsBtn) {
+        saveSettingsBtn.addEventListener('click', saveSettings);
+    }
+    
+    // Reset settings button
+    const resetSettingsBtn = document.getElementById('resetSettingsBtn');
+    if (resetSettingsBtn) {
+        resetSettingsBtn.addEventListener('click', resetSettings);
+    }
+    
+    // Export settings
+    const exportSettingsBtn = document.getElementById('exportSettingsBtn');
+    if (exportSettingsBtn) {
+        exportSettingsBtn.addEventListener('click', exportSettings);
+    }
+    
+    // Import settings
+    const importSettingsBtn = document.getElementById('importSettingsBtn');
+    if (importSettingsBtn) {
+        importSettingsBtn.addEventListener('click', () => {
+            document.getElementById('importSettingsFile').click();
+        });
+    }
+    
+    const importSettingsFile = document.getElementById('importSettingsFile');
+    if (importSettingsFile) {
+        importSettingsFile.addEventListener('change', importSettings);
+    }
+    
+    // Apply connection settings
+    const applyConnectionBtn = document.getElementById('applyConnectionBtn');
+    if (applyConnectionBtn) {
+        applyConnectionBtn.addEventListener('click', applyConnectionSettings);
+    }
+    
+    // Test connection
+    const testConnectionBtn = document.getElementById('testConnectionBtn');
+    if (testConnectionBtn) {
+        testConnectionBtn.addEventListener('click', testConnection);
+    }
+    
+    // Theme select
+    const themeSelect = document.getElementById('themeSelect');
+    if (themeSelect) {
+        themeSelect.addEventListener('change', (e) => {
+            settings.theme = e.target.value;
+            applyTheme(settings.theme);
+            saveSettings();
+        });
+    }
+    
+    // Auto reconnect toggle
+    const autoReconnectToggle = document.getElementById('autoReconnectToggle');
+    if (autoReconnectToggle) {
+        autoReconnectToggle.addEventListener('change', (e) => {
+            settings.autoReconnect = e.target.checked;
+            saveSettings();
+        });
+    }
+    
+    // Reconnect delay
+    const reconnectDelay = document.getElementById('reconnectDelay');
+    if (reconnectDelay) {
+        reconnectDelay.addEventListener('change', (e) => {
+            settings.reconnectDelay = parseInt(e.target.value) || 3;
+            saveSettings();
+        });
+    }
+    
+    // Max reconnect attempts
+    const maxReconnectAttempts = document.getElementById('maxReconnectAttempts');
+    if (maxReconnectAttempts) {
+        maxReconnectAttempts.addEventListener('change', (e) => {
+            settings.maxReconnectAttempts = parseInt(e.target.value) || 0;
+            saveSettings();
+        });
+    }
+    
+    // Default view
+    const defaultView = document.getElementById('defaultView');
+    if (defaultView) {
+        defaultView.addEventListener('change', (e) => {
+            settings.defaultView = e.target.value;
+            saveSettings();
+        });
+    }
+    
+    // Default display mode
+    const defaultDisplayMode = document.getElementById('defaultDisplayMode');
+    if (defaultDisplayMode) {
+        defaultDisplayMode.addEventListener('change', (e) => {
+            settings.defaultDisplayMode = e.target.value;
+            saveSettings();
+        });
+    }
+    
+    // Animations toggle
+    const animationsToggle = document.getElementById('animationsToggle');
+    if (animationsToggle) {
+        animationsToggle.addEventListener('change', (e) => {
+            settings.animationsEnabled = e.target.checked;
+            saveSettings();
+        });
+    }
+    
+    // Clear all data
+    const clearAllDataBtn = document.getElementById('clearAllDataBtn');
+    if (clearAllDataBtn) {
+        clearAllDataBtn.addEventListener('click', clearAllData);
+    }
+    
+    // History limit
+    const historyLimit = document.getElementById('historyLimit');
+    if (historyLimit) {
+        historyLimit.addEventListener('change', (e) => {
+            settings.historyLimit = parseInt(e.target.value) || 100;
+            saveSettings();
+        });
+    }
+}
+
+function resetSettings() {
+    if (confirm('Reset all settings to defaults?')) {
+        settings = {
+            wsAddress: 'ws://localhost:8000/webui',
+            autoReconnect: true,
+            reconnectDelay: 3,
+            maxReconnectAttempts: 0,
+            theme: 'dark',
+            defaultView: 'dashboard',
+            defaultDisplayMode: 'grid',
+            animationsEnabled: true,
+            notifyDeviceOnline: true,
+            notifyDeviceOffline: true,
+            notifyCommandResult: false,
+            notifyPendingDevice: true,
+            historyLimit: 100,
+            reconnectAttempts: 0
+        };
+        saveSettings();
+        applyTheme(settings.theme);
+        
+        // Reset UI elements
+        document.getElementById('wsAddress').value = settings.wsAddress;
+        document.getElementById('autoReconnectToggle').checked = settings.autoReconnect;
+        document.getElementById('reconnectDelay').value = settings.reconnectDelay;
+        document.getElementById('maxReconnectAttempts').value = settings.maxReconnectAttempts;
+        document.getElementById('themeSelect').value = settings.theme;
+        document.getElementById('defaultView').value = settings.defaultView;
+        document.getElementById('defaultDisplayMode').value = settings.defaultDisplayMode;
+        document.getElementById('animationsToggle').checked = settings.animationsEnabled;
+        document.getElementById('historyLimit').value = settings.historyLimit;
+        
+        showToast('Settings reset to defaults', 'success');
+        
+        // Reconnect with new settings
+        if (ws) {
+            ws.close();
+            setTimeout(connectWebSocket, 1000);
+        }
+    }
+}
+
+function exportSettings() {
+    const settingsData = {
+        settings: settings,
+        version: '2.0.0',
+        exportDate: new Date().toISOString()
+    };
+    
+    const blob = new Blob([JSON.stringify(settingsData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `yuki_settings_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Settings exported', 'success');
+}
+
+function importSettings(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (data.settings) {
+                settings = { ...settings, ...data.settings };
+                saveSettings();
+                applyTheme(settings.theme);
+                
+                // Update UI
+                document.getElementById('wsAddress').value = settings.wsAddress;
+                document.getElementById('autoReconnectToggle').checked = settings.autoReconnect;
+                document.getElementById('reconnectDelay').value = settings.reconnectDelay;
+                document.getElementById('maxReconnectAttempts').value = settings.maxReconnectAttempts;
+                document.getElementById('themeSelect').value = settings.theme;
+                document.getElementById('defaultView').value = settings.defaultView;
+                document.getElementById('defaultDisplayMode').value = settings.defaultDisplayMode;
+                document.getElementById('animationsToggle').checked = settings.animationsEnabled;
+                document.getElementById('historyLimit').value = settings.historyLimit;
+                
+                showToast('Settings imported successfully', 'success');
+                
+                // Reconnect
+                if (ws) {
+                    ws.close();
+                    setTimeout(connectWebSocket, 1000);
+                }
+            } else {
+                showToast('Invalid settings file', 'error');
+            }
+        } catch (err) {
+            showToast('Failed to parse settings file', 'error');
+        }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+}
+
+function applyTheme(theme) {
+    if (theme === 'auto') {
+        const darkModeMedia = window.matchMedia('(prefers-color-scheme: dark)');
+        currentTheme = darkModeMedia.matches ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', currentTheme);
+    } else {
+        currentTheme = theme;
+        document.documentElement.setAttribute('data-theme', currentTheme);
+    }
+}
+
+function applyConnectionSettings() {
+    const newAddress = document.getElementById('wsAddress').value.trim();
+    if (newAddress && newAddress !== settings.wsAddress) {
+        settings.wsAddress = newAddress;
+        saveSettings();
+        
+        if (ws) {
+            ws.close();
+            setTimeout(connectWebSocket, 1000);
+        }
+        showToast(`Reconnecting to ${newAddress}...`, 'info');
+    }
+}
+
+function testConnection() {
+    const address = document.getElementById('wsAddress').value.trim();
+    showToast(`Testing connection to ${address}...`, 'info');
+    
+    const testWs = new WebSocket(address);
+    testWs.onopen = () => {
+        showToast(`Connection successful to ${address}`, 'success');
+        testWs.close();
+    };
+    testWs.onerror = () => {
+        showToast(`Connection failed to ${address}`, 'error');
+    };
+    setTimeout(() => {
+        if (testWs.readyState === WebSocket.CONNECTING) {
+            testWs.close();
+            showToast(`Connection timeout to ${address}`, 'error');
+        }
+    }, 5000);
+}
+
+function updateServerInfo() {
+    // Update server uptime info if needed
+    const connectedDevices = Object.keys(devices).filter(id => devices[id].status === 'online').length;
+    const connectedCountEl = document.getElementById('connectedDevicesCount');
+    if (connectedCountEl) connectedCountEl.textContent = connectedDevices;
+}
+
+function updateServerStatus(isConnected, statusText) {
+    const coreStatus = document.getElementById('coreServerStatus');
+    if (coreStatus) {
+        coreStatus.textContent = statusText;
+        coreStatus.className = `status-badge ${isConnected ? 'online' : 'offline'}`;
+    }
+}
+
+function updateConnectionStatus(connected) {
+    const statusEl = document.getElementById('connectionStatus');
+    if (statusEl) {
+        if (connected) {
+            statusEl.className = 'connection-status connected';
+            statusEl.innerHTML = '<i class="fas fa-circle"></i><span>Connected</span>';
+        } else {
+            statusEl.className = 'connection-status disconnected';
+            statusEl.innerHTML = '<i class="fas fa-circle"></i><span>Disconnected</span>';
+        }
+    }
+}
+
+function clearAllData() {
+    if (confirm('⚠️ WARNING: This will clear ALL data including command history, event logs, groups, and tags. This cannot be undone. Continue?')) {
+        // Clear command history
+        commandHistory = [];
+        
+        // Clear event logs
+        eventLogs = [];
+        
+        // Clear groups (via API)
+        Object.keys(device_groups || {}).forEach(async groupId => {
+            try {
+                await fetch('/api/groups', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ group_id: groupId })
+                });
+            } catch(e) {}
+        });
+        
+        // Clear local storage
+        localStorage.removeItem('commandHistory');
+        localStorage.removeItem('widgets_backup');
+        
+        // Clear device tags
+        device_tags = {};
+        
+        // Save to server
+        saveStoredData();
+        
+        // Reload groups and tags
+        loadGroups();
+        loadTags();
+        
+        // Re-render views
+        renderHistory();
+        renderLogs();
+        renderDevices();
+        
+        showToast('All data cleared successfully', 'success');
+    }
+}
 
 // ==================== SETTINGS MANAGEMENT ====================
 
@@ -96,7 +430,6 @@ function loadSettings() {
         } catch (e) {}
     }
     
-    // Apply settings to UI if elements exist
     const wsAddressEl = document.getElementById('wsAddress');
     if (wsAddressEl) wsAddressEl.value = settings.wsAddress;
     
@@ -136,7 +469,6 @@ function loadSettings() {
     const historyLimitEl = document.getElementById('historyLimit');
     if (historyLimitEl) historyLimitEl.value = settings.historyLimit;
     
-    // Apply theme
     if (settings.theme === 'auto') {
         const darkModeMedia = window.matchMedia('(prefers-color-scheme: dark)');
         currentTheme = darkModeMedia.matches ? 'dark' : 'light';
@@ -152,7 +484,6 @@ function loadSettings() {
         document.documentElement.setAttribute('data-theme', currentTheme);
     }
     
-    // Apply default view
     if (settings.defaultView !== 'dashboard') {
         setTimeout(() => {
             switchView(settings.defaultView);
@@ -165,7 +496,6 @@ function loadSettings() {
         }, 100);
     }
     
-    // Apply display mode
     currentViewMode = settings.defaultDisplayMode;
     document.querySelectorAll('.view-btn').forEach(btn => {
         btn.classList.remove('active');
@@ -174,7 +504,6 @@ function loadSettings() {
         }
     });
     
-    // Apply animations
     if (!settings.animationsEnabled) {
         document.body.classList.add('no-animations');
     }
@@ -222,7 +551,6 @@ function saveSettings() {
     
     localStorage.setItem('yuki_settings', JSON.stringify(settings));
     
-    // Apply animations
     if (settings.animationsEnabled) {
         document.body.classList.remove('no-animations');
     } else {
@@ -230,193 +558,6 @@ function saveSettings() {
     }
     
     showToast('Settings saved', 'success');
-}
-
-function exportSettings() {
-    const exportData = {
-        version: '2.0',
-        timestamp: new Date().toISOString(),
-        settings: settings,
-        devices: devices,
-        commandHistory: commandHistory.slice(0, 50)
-    };
-    
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.href = url;
-    link.download = `yuki_backup_${new Date().toISOString().slice(0,19)}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-    
-    showToast('Settings exported', 'success');
-}
-
-function importSettings(file) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        try {
-            const data = JSON.parse(e.target.result);
-            if (data.settings) {
-                settings = { ...settings, ...data.settings };
-                saveSettings();
-                loadSettings();
-            }
-            if (data.commandHistory) {
-                commandHistory = data.commandHistory.slice(0, settings.historyLimit);
-                saveStoredData();
-                renderHistory();
-            }
-            showToast('Settings imported successfully', 'success');
-        } catch (err) {
-            showToast('Invalid backup file', 'error');
-        }
-    };
-    reader.readAsText(file);
-}
-
-function resetSettings() {
-    if (confirm('Reset all settings to defaults? This cannot be undone.')) {
-        localStorage.removeItem('yuki_settings');
-        localStorage.removeItem('commandHistory');
-        location.reload();
-    }
-}
-
-function clearAllData() {
-    if (confirm('Clear ALL data (settings, history, logs)? This cannot be undone.')) {
-        localStorage.clear();
-        location.reload();
-    }
-}
-
-async function testConnection() {
-    const address = document.getElementById('wsAddress').value;
-    const testWs = new WebSocket(address);
-    
-    const timeout = setTimeout(() => {
-        testWs.close();
-        updateServerStatus(false, 'Timeout');
-        showToast('Connection timeout', 'error');
-    }, 5000);
-    
-    testWs.onopen = () => {
-        clearTimeout(timeout);
-        updateServerStatus(true, 'Connected');
-        showToast('Connection successful!', 'success');
-        testWs.close();
-    };
-    
-    testWs.onerror = () => {
-        clearTimeout(timeout);
-        updateServerStatus(false, 'Failed');
-        showToast('Connection failed', 'error');
-    };
-}
-
-function updateServerStatus(connected, message) {
-    const statusEl = document.getElementById('coreServerStatus');
-    if (statusEl) {
-        statusEl.textContent = message || (connected ? 'Connected' : 'Disconnected');
-        statusEl.className = `status-badge ${connected ? 'online' : 'offline'}`;
-    }
-}
-
-function updateServerInfo() {
-    // Update connected devices count
-    const devicesCount = Object.keys(devices).length;
-    const devicesCountEl = document.getElementById('connectedDevicesCount');
-    if (devicesCountEl) devicesCountEl.textContent = devicesCount;
-    
-    // Update browser info
-    const browserInfoEl = document.getElementById('browserInfo');
-    if (browserInfoEl) {
-        browserInfoEl.textContent = navigator.userAgent.split(' ').slice(-2).join(' ').substring(0, 50);
-    }
-    
-    const languageInfoEl = document.getElementById('languageInfo');
-    if (languageInfoEl) languageInfoEl.textContent = navigator.language;
-    
-    const timezoneInfoEl = document.getElementById('timezoneInfo');
-    if (timezoneInfoEl) timezoneInfoEl.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    
-    // Calculate uptime (mock - would need server API)
-    const startTime = localStorage.getItem('yuki_start_time');
-    const uptimeEl = document.getElementById('serverUptime');
-    if (uptimeEl) {
-        if (startTime) {
-            const uptime = Math.floor((Date.now() - parseInt(startTime)) / 1000);
-            const hours = Math.floor(uptime / 3600);
-            const minutes = Math.floor((uptime % 3600) / 60);
-            uptimeEl.textContent = `${hours}h ${minutes}m`;
-        } else {
-            localStorage.setItem('yuki_start_time', Date.now().toString());
-            uptimeEl.textContent = 'Just started';
-        }
-    }
-}
-
-function initSettingsListeners() {
-    const applyConnectionBtn = document.getElementById('applyConnectionBtn');
-    if (applyConnectionBtn) {
-        applyConnectionBtn.addEventListener('click', () => {
-            saveSettings();
-            manualDisconnect = false;
-            if (ws) {
-                ws.close();
-            }
-            setTimeout(() => connectWebSocket(), 500);
-        });
-    }
-    
-    const testConnectionBtn = document.getElementById('testConnectionBtn');
-    if (testConnectionBtn) testConnectionBtn.addEventListener('click', testConnection);
-    
-    const exportSettingsBtn = document.getElementById('exportSettingsBtn');
-    if (exportSettingsBtn) exportSettingsBtn.addEventListener('click', exportSettings);
-    
-    const importSettingsBtn = document.getElementById('importSettingsBtn');
-    const importSettingsFile = document.getElementById('importSettingsFile');
-    if (importSettingsBtn && importSettingsFile) {
-        importSettingsBtn.addEventListener('click', () => {
-            importSettingsFile.click();
-        });
-        importSettingsFile.addEventListener('change', (e) => {
-            if (e.target.files[0]) importSettings(e.target.files[0]);
-            e.target.value = '';
-        });
-    }
-    
-    const resetSettingsBtn = document.getElementById('resetSettingsBtn');
-    if (resetSettingsBtn) resetSettingsBtn.addEventListener('click', resetSettings);
-    
-    const clearAllDataBtn = document.getElementById('clearAllDataBtn');
-    if (clearAllDataBtn) clearAllDataBtn.addEventListener('click', clearAllData);
-    
-    // Auto-save on input change
-    const autoSaveInputs = ['wsAddress', 'autoReconnectToggle', 'reconnectDelay', 'maxReconnectAttempts', 
-                            'themeSelect', 'defaultView', 'defaultDisplayMode', 'animationsToggle',
-                            'notifyDeviceOnline', 'notifyDeviceOffline', 'notifyCommandResult', 
-                            'notifyPendingDevice', 'historyLimit'];
-    
-    autoSaveInputs.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-            el.addEventListener('change', () => saveSettings());
-            if (el.type !== 'checkbox' && el.type !== 'select-one') {
-                el.addEventListener('input', () => saveSettings());
-            }
-        }
-    });
-    
-    // GitHub link
-    const githubLink = document.getElementById('githubLink');
-    if (githubLink) {
-        githubLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            window.open('https://github.com/yuki-system/dashboard', '_blank');
-        });
-    }
 }
 
 // ==================== THEME ====================
@@ -438,24 +579,19 @@ function initTheme() {
 // ==================== EVENT LISTENERS ====================
 
 function initEventListeners() {
-    // Sidebar toggle
     document.getElementById('sidebarToggle')?.addEventListener('click', () => {
         sidebar.classList.toggle('collapsed');
     });
     
-    // Navigation
     document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', () => {
             const view = item.dataset.view;
             switchView(view);
-            
-            // Update active state
             document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
             item.classList.add('active');
         });
     });
     
-    // Filter chips
     document.querySelectorAll('.filter-chip').forEach(chip => {
         chip.addEventListener('click', () => {
             currentFilter = chip.dataset.filter;
@@ -465,7 +601,6 @@ function initEventListeners() {
         });
     });
     
-    // View toggle
     document.querySelectorAll('.view-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             currentViewMode = btn.dataset.view;
@@ -475,10 +610,8 @@ function initEventListeners() {
         });
     });
     
-    // Search
     searchInput?.addEventListener('input', () => renderDevices());
     
-    // Buttons
     document.getElementById('exportCsvBtn')?.addEventListener('click', exportToCsv);
     document.getElementById('rotateTokenBtn')?.addEventListener('click', rotateToken);
     document.getElementById('enableNotificationsBtn')?.addEventListener('click', requestNotificationPermission);
@@ -506,29 +639,26 @@ function initEventListeners() {
             showToast('Token info copied to clipboard', 'success');
         }
     });
-
-    // Загрузка расширенных статусов при старте
+    
     setInterval(() => {
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'get_extended_statuses' }));
         }
-    }, 30000); // Каждые 30 секунд
-
-    setTimeout(() => {
-        const addBtn = document.getElementById('addWidgetBtn');
-        if (addBtn) {
-            // Удаляем старые обработчики
-            const newBtn = addBtn.cloneNode(true);
-            addBtn.parentNode.replaceChild(newBtn, addBtn);
-            newBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                showAddWidgetModal();
-            });
-        }
-    }, 500);
+    }, 30000);
     
-    // Modal handlers
+    document.getElementById('resetWidgetsBtn')?.addEventListener('click', () => {
+        if (widgetManager) widgetManager.resetToDefault();
+    });
+
+    document.getElementById('addWidgetBtn')?.addEventListener('click', () => {
+        if (window.widgetManager) {
+            window.widgetManager.showAddModal();
+        } else {
+            console.error('WidgetManager not initialized');
+            if (window.showToast) window.showToast('Widget system not ready', 'error');
+        }
+    });
+    
     initModalHandlers();
 }
 
@@ -542,86 +672,12 @@ function switchView(view) {
     if (view === 'logs') renderLogs();
     
     if (view === 'admin') {
-        // Загружаем данные при открытии админ-панели
-        loadSystemMetrics();      // Системные метрики
-        loadBlacklist();          // Черный список
-        loadAuditLog();           // Audit лог
-        loadCommandStats(currentStatPeriod || 'day');  // Статистика команд
+        loadSystemMetrics();
+        loadBlacklist();
+        loadAuditLog();
+        loadCommandStats(currentStatPeriod || 'day');
         showToast('Admin panel data loaded', 'info');
     }
-}
-
-function initModalHandlers() {
-    const commandModal = document.getElementById('commandModal');
-    const confirmModal = document.getElementById('confirmModal');
-    const authModal = document.getElementById('authModal');
-    
-    document.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
-        btn.addEventListener('click', () => {
-            if (commandModal) commandModal.style.display = 'none';
-            if (confirmModal) confirmModal.style.display = 'none';
-            if (authModal) authModal.style.display = 'none';
-        });
-    });
-    
-    document.getElementById('sendCommandBtn')?.addEventListener('click', () => {
-        const deviceId = document.getElementById('modalDeviceId').value;
-        const command = document.getElementById('modalCommand').value.trim();
-        let payload = {};
-        try {
-            payload = JSON.parse(document.getElementById('modalPayload').value);
-        } catch (e) {
-            showToast('Invalid JSON payload', 'error');
-            return;
-        }
-        if (!command) {
-            showToast('Command is required', 'error');
-            return;
-        }
-        sendCommand(deviceId, command, payload);
-        if (commandModal) commandModal.style.display = 'none';
-    });
-    
-    document.getElementById('confirmYesBtn')?.addEventListener('click', () => {
-        if (pendingConfirmation && ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-                type: 'confirm_response',
-                id: pendingConfirmation.id,
-                device_id: pendingConfirmation.device_id,
-                command: pendingConfirmation.command,
-                params: pendingConfirmation.params,
-                approved: true
-            }));
-            showToast(`Command "${pendingConfirmation.command}" confirmed`, 'warning');
-        }
-        if (confirmModal) confirmModal.style.display = 'none';
-        pendingConfirmation = null;
-    });
-    
-    document.getElementById('confirmNoBtn')?.addEventListener('click', () => {
-        if (confirmModal) confirmModal.style.display = 'none';
-        pendingConfirmation = null;
-    });
-    
-    document.getElementById('authApproveBtn')?.addEventListener('click', () => {
-        if (pendingAuthRequest) {
-            approveDevice(pendingAuthRequest.device_id, true);
-        }
-        if (authModal) authModal.style.display = 'none';
-    });
-    
-    document.getElementById('authDenyBtn')?.addEventListener('click', () => {
-        if (pendingAuthRequest) {
-            approveDevice(pendingAuthRequest.device_id, false);
-        }
-        if (authModal) authModal.style.display = 'none';
-    });
-    
-    window.onclick = (e) => {
-        if (commandModal && e.target === commandModal) commandModal.style.display = 'none';
-        if (confirmModal && e.target === confirmModal) confirmModal.style.display = 'none';
-        if (authModal && e.target === authModal) authModal.style.display = 'none';
-    };
 }
 
 // ==================== WEBSOCKET ====================
@@ -637,7 +693,7 @@ function connectWebSocket() {
         updateConnectionStatus(true);
         addLogEntry('system', 'Connected to Core');
         if (reconnectTimer) clearTimeout(reconnectTimer);
-        requestTokenInfo(); // вместо прямого ws.send
+        requestTokenInfo();
         ws.send(JSON.stringify({ type: 'get_devices' }));
         updateServerStatus(true, 'Connected');
     };
@@ -684,16 +740,6 @@ function scheduleReconnect() {
     }, settings.reconnectDelay * 1000);
 }
 
-function updateConnectionStatus(connected) {
-    const statusEl = document.getElementById('connectionStatus');
-    if (statusEl) {
-        statusEl.classList.toggle('connected', connected);
-        statusEl.classList.toggle('disconnected', !connected);
-        const span = statusEl.querySelector('span');
-        if (span) span.textContent = connected ? 'Connected' : 'Disconnected';
-    }
-}
-
 // ==================== MESSAGE HANDLING ====================
 
 function handleMessage(data) {
@@ -705,10 +751,9 @@ function handleMessage(data) {
                 devices = data.payload.devices;
                 updateDashboardStats();
                 renderDevices();
-                updateAllWidgets();
+                if (widgetManager) widgetManager.updateAll();
                 checkAndNotifyPending();
                 
-                // Check for device status changes
                 Object.entries(devices).forEach(([id, device]) => {
                     const oldDevice = oldDevices[id];
                     if (oldDevice && oldDevice.status !== device.status) {
@@ -733,8 +778,7 @@ function handleMessage(data) {
             if (confirmText) {
                 confirmText.textContent = `Execute "${data.payload.command}" on ${data.payload.device_id}?`;
             }
-            const confirmModal = document.getElementById('confirmModal');
-            if (confirmModal) confirmModal.style.display = 'block';
+            document.getElementById('confirmModal').style.display = 'block';
             break;
             
         case 'device_auth_request':
@@ -754,8 +798,7 @@ function handleMessage(data) {
                     `<span class="capability-chip">${escapeHtml(cap)}</span>`
                 ).join('');
             }
-            const authModal = document.getElementById('authModal');
-            if (authModal) authModal.style.display = 'block';
+            document.getElementById('authModal').style.display = 'block';
             break;
             
         case 'token_info':
@@ -764,7 +807,7 @@ function handleMessage(data) {
             
         case 'command_result':
             handleCommandResult(data);
-            updateRecentCommandsWidget();
+            if (widgetManager) widgetManager.updateAll();
             break;
             
         case 'status':
@@ -789,18 +832,15 @@ function handleMessage(data) {
         case 'extended_status':
             updateExtendedStatus(data.device_id, data.substatus, data.details);
             break;
-
         case 'metrics_update':
             updateDeviceMetrics(data.device_id, data.metrics, data.timestamp);
-            // Также обновляем данные в devices объекте
             if (devices[data.device_id]) {
                 devices[data.device_id].last_metrics = data.metrics;
             }
             break;
-
         case 'extended_statuses':
             extendedStatuses = data.statuses;
-            renderDevices(); // Перерендериваем
+            renderDevices();
             break;
     }
 }
@@ -810,7 +850,6 @@ function handleCommandResult(data) {
     const success = payload.success;
     const error = payload.error;
     
-    // Update history
     const historyEntry = commandHistory.find(h => h.id === id);
     if (historyEntry) {
         historyEntry.status = success ? 'success' : 'error';
@@ -834,31 +873,6 @@ function handleCommandResult(data) {
     }
 }
 
-function formatTime(seconds) {
-    if (seconds <= 0) return 'Expired';
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    return `${h}h ${m}m ${s}s`;
-}
-
-
-function updateTokenInfo(payload) {
-    const infoDiv = document.getElementById('tokenInfo');
-    if (infoDiv) {
-        const created = payload.created_at ? new Date(payload.created_at * 1000).toLocaleString() : 'N/A';
-        const expiresIn = payload.expires_in ? formatTime(payload.expires_in) : 'Never';
-        infoDiv.innerHTML = `<strong>Created:</strong> ${created}<br><strong>Expires:</strong> ${expiresIn}`;
-    }
-    
-    // Update all token widgets
-    document.querySelectorAll('[id^="widgetTokenInfo"]').forEach(widget => {
-        const created = payload.created_at ? new Date(payload.created_at * 1000).toLocaleString() : 'N/A';
-        const expiresIn = payload.expires_in ? formatTime(payload.expires_in) : 'Never';
-        widget.innerHTML = `<strong>Created:</strong> ${created}<br><strong>Expires:</strong> ${expiresIn}`;
-    });
-}
-
 // ==================== DASHBOARD STATS ====================
 
 function updateDashboardStats() {
@@ -867,7 +881,6 @@ function updateDashboardStats() {
     const pending = Object.values(devices).filter(d => d.status === 'pending').length;
     const offline = Object.values(devices).filter(d => d.status === 'offline').length;
     
-    // Обновляем цифры в карточках статистики
     const totalEl = document.getElementById('totalDevices');
     if (totalEl) totalEl.textContent = total;
     const onlineEl = document.getElementById('onlineDevices');
@@ -877,10 +890,8 @@ function updateDashboardStats() {
     const offlineEl = document.getElementById('offlineDevices');
     if (offlineEl) offlineEl.textContent = offline;
     
-    // ОБНОВЛЯЕМ БЕЙДЖ В САЙДБАРЕ
     const badge = document.getElementById('deviceCountBadge');
     if (badge) {
-        // Определяем основной статус для отображения (приоритет: онлайн > pending > оффлайн)
         let mainStatus = 'offline';
         let displayCount = offline;
         
@@ -895,16 +906,11 @@ function updateDashboardStats() {
             displayCount = offline;
         }
         
-        // Меняем текст и классы
         badge.textContent = displayCount;
-        
-        // Убираем старые классы статусов
         badge.classList.remove('online', 'pending', 'offline');
-        // Добавляем новый класс
         badge.classList.add(mainStatus);
     }
     
-    // Recent commands preview (оставляем как было)
     const recentContainer = document.getElementById('recentCommands');
     if (recentContainer) {
         if (commandHistory.length > 0) {
@@ -930,12 +936,10 @@ function renderDevices() {
     
     let filteredDevices = Object.entries(devices);
     
-    // Filter by status
     if (currentFilter !== 'all') {
         filteredDevices = filteredDevices.filter(([_, d]) => d.status === currentFilter);
     }
     
-    // Filter by search
     const searchTerm = searchInput?.value.toLowerCase() || '';
     if (searchTerm) {
         filteredDevices = filteredDevices.filter(([id, d]) => 
@@ -970,7 +974,6 @@ function renderDeviceCard(id, device) {
     const extended = extendedStatuses[id] || {};
     const substatus = extended.substatus || device.substatus || '';
 
-    // Формируем HTML метрик
     let metricsHtml = '';
     if (isOnline && Object.keys(metrics).length > 0) {
         metricsHtml = '<div class="device-metrics"><div class="metrics-row">';
@@ -1078,7 +1081,6 @@ function renderDeviceListItem(id, device) {
 }
 
 function attachDeviceEventListeners() {
-    // Send Command - opens quick commands panel
     document.querySelectorAll('.send-cmd').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1090,14 +1092,12 @@ function attachDeviceEventListeners() {
                 return;
             }
             
-            // Close all other panels
             document.querySelectorAll('.quick-commands-panel').forEach(panel => {
                 if (panel.id !== `quick-panel-${deviceId}`) {
                     panel.style.display = 'none';
                 }
             });
             
-            // Toggle current panel
             const panel = document.getElementById(`quick-panel-${deviceId}`);
             if (panel) {
                 panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
@@ -1105,40 +1105,32 @@ function attachDeviceEventListeners() {
         });
     });
     
-    // JSON Command - opens modal
     document.querySelectorAll('.json-cmd').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const deviceId = btn.dataset.id;
-            showCommandModal(deviceId);
+            showCommandModal(btn.dataset.id);
         });
     });
     
-    // Close quick panel buttons
     document.querySelectorAll('.close-quick-panel').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const deviceId = btn.dataset.id;
-            const panel = document.getElementById(`quick-panel-${deviceId}`);
+            const panel = document.getElementById(`quick-panel-${btn.dataset.id}`);
             if (panel) panel.style.display = 'none';
         });
     });
     
-    // Quick command buttons
     document.querySelectorAll('.quick-cmd-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             const deviceId = btn.dataset.id;
             const command = btn.dataset.cmd;
-            
             const panel = document.getElementById(`quick-panel-${deviceId}`);
             if (panel) panel.style.display = 'none';
-            
             sendCommand(deviceId, command, {});
         });
     });
     
-    // Send custom command
     document.querySelectorAll('.send-custom-cmd').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1153,13 +1145,11 @@ function attachDeviceEventListeners() {
             
             const panel = document.getElementById(`quick-panel-${deviceId}`);
             if (panel) panel.style.display = 'none';
-            
             sendCommand(deviceId, command, {});
             if (input) input.value = '';
         });
     });
     
-    // Enter key in custom command input
     document.querySelectorAll('.custom-cmd-input').forEach(input => {
         input.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -1176,7 +1166,6 @@ function attachDeviceEventListeners() {
         });
     });
     
-    // Disconnect device
     document.querySelectorAll('.disconnect-device').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1184,7 +1173,6 @@ function attachDeviceEventListeners() {
         });
     });
     
-    // Remove device
     document.querySelectorAll('.remove-device').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1194,7 +1182,6 @@ function attachDeviceEventListeners() {
         });
     });
     
-    // Click outside closes panel
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.quick-commands-panel') && !e.target.closest('.send-cmd')) {
             document.querySelectorAll('.quick-commands-panel').forEach(panel => {
@@ -1206,18 +1193,10 @@ function attachDeviceEventListeners() {
 
 function getDeviceIcon(deviceType) {
     const icons = {
-        'pc': 'fa-desktop',
-        'laptop': 'fa-laptop',
-        'server': 'fa-server',
-        'phone': 'fa-mobile-alt',
-        'tablet': 'fa-tablet-alt',
-        'raspberry': 'fa-microchip',
-        'arduino': 'fa-microchip',
-        'smartphone': 'fa-mobile-alt',
-        'router': 'fa-wifi',
-        'switch': 'fa-exchange-alt',
-        'camera': 'fa-video',
-        'speaker': 'fa-music'
+        'pc': 'fa-desktop', 'laptop': 'fa-laptop', 'server': 'fa-server',
+        'phone': 'fa-mobile-alt', 'tablet': 'fa-tablet-alt', 'raspberry': 'fa-microchip',
+        'arduino': 'fa-microchip', 'smartphone': 'fa-mobile-alt', 'router': 'fa-wifi',
+        'switch': 'fa-exchange-alt', 'camera': 'fa-video', 'speaker': 'fa-music'
     };
     return icons[deviceType?.toLowerCase()] || 'fa-microchip';
 }
@@ -1227,7 +1206,6 @@ function getDeviceIcon(deviceType) {
 function showCommandModal(deviceId) {
     const device = devices[deviceId];
     
-    // Проверяем, существует ли устройство и онлайн ли оно
     if (!device) {
         showToast('Device not found', 'error');
         return;
@@ -1238,18 +1216,13 @@ function showCommandModal(deviceId) {
         return;
     }
     
-    const modalDeviceId = document.getElementById('modalDeviceId');
-    if (modalDeviceId) modalDeviceId.value = deviceId;
-    const modalCommand = document.getElementById('modalCommand');
-    if (modalCommand) modalCommand.value = '';
-    const modalPayload = document.getElementById('modalPayload');
-    if (modalPayload) modalPayload.value = '{}';
-    const commandModal = document.getElementById('commandModal');
-    if (commandModal) commandModal.style.display = 'block';
+    document.getElementById('modalDeviceId').value = deviceId;
+    document.getElementById('modalCommand').value = '';
+    document.getElementById('modalPayload').value = '{}';
+    document.getElementById('commandModal').style.display = 'block';
 }
 
 function sendCommand(deviceId, command, payload, callback) {
-    // Добавляем проверку статуса
     const device = devices[deviceId];
     if (!device || device.status !== 'online') {
         showToast(`Cannot send command: device ${deviceId} is ${device?.status || 'offline'}`, 'error');
@@ -1264,30 +1237,19 @@ function sendCommand(deviceId, command, payload, callback) {
     }
     
     const msgId = generateUUID();
-    const msg = { type: 'command', device_id: deviceId, command, payload, id: msgId };
-    ws.send(JSON.stringify(msg));
+    ws.send(JSON.stringify({ type: 'command', device_id: deviceId, command, payload, id: msgId }));
     
-    // Add to history
     commandHistory.unshift({
-        id: msgId,
-        timestamp: Date.now(),
-        deviceId,
-        command,
-        payload: JSON.stringify(payload),
-        status: 'pending',
-        error: null
+        id: msgId, timestamp: Date.now(), deviceId, command,
+        payload: JSON.stringify(payload), status: 'pending', error: null
     });
     
-    // Trim history
-    while (commandHistory.length > settings.historyLimit) {
-        commandHistory.pop();
-    }
+    while (commandHistory.length > settings.historyLimit) commandHistory.pop();
     saveStoredData();
     renderHistory();
     
     addLogEntry('command', `→ ${deviceId}: ${command}`);
     showToast(`Command sent to ${deviceId}`, 'info');
-    
     if (callback) callback(true);
 }
 
@@ -1310,12 +1272,11 @@ function removeDevice(deviceId) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'remove_device', device_id: deviceId }));
     
-    // Локально удаляем устройство из списка
     if (devices[deviceId]) {
         delete devices[deviceId];
-        renderDevices();           // Обновляем отображение
-        updateDashboardStats();    // Обновляем статистику
-        updateMiniStats();         // Обновляем виджеты
+        renderDevices();
+        updateDashboardStats();
+        if (widgetManager) widgetManager.updateAll();
     }
     
     addLogEntry('action', `Removed device ${deviceId}`);
@@ -1325,9 +1286,7 @@ function removeDevice(deviceId) {
 function approveDevice(deviceId, approved) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     const msg = { type: 'device_auth_response', device_id: deviceId, approved };
-    if (pendingAuthRequest?.device_id === deviceId) {
-        msg.id = pendingAuthRequest.id;
-    }
+    if (pendingAuthRequest?.device_id === deviceId) msg.id = pendingAuthRequest.id;
     ws.send(JSON.stringify(msg));
     addLogEntry('auth', `Device ${deviceId} ${approved ? 'approved' : 'denied'}`);
     showToast(`Device ${deviceId} ${approved ? 'approved' : 'denied'}`, approved ? 'success' : 'warning');
@@ -1345,33 +1304,35 @@ function rotateToken() {
     }
 }
 
-// ==================== EXPORT ====================
+// ==================== TOKEN INFO ====================
 
-function exportToCsv() {
-    const headers = ['ID', 'Type', 'Status', 'Last Seen', 'Capabilities'];
-    const rows = Object.entries(devices).map(([id, d]) => [
-        id, d.type, d.status,
-        d.last_seen ? new Date(d.last_seen * 1000).toLocaleString() : '',
-        (d.capabilities || []).join(',')
-    ]);
+function requestTokenInfo() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'get_token_info' }));
+    }
+}
+
+function updateTokenInfo(payload) {
+    const created = payload.created_at ? new Date(payload.created_at * 1000).toLocaleString() : 'N/A';
+    const expiresIn = payload.expires_in ? formatTime(payload.expires_in) : 'Never';
     
-    let csvContent = headers.join(',') + '\n';
-    rows.forEach(row => {
-        csvContent += row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',') + '\n';
-    });
+    const infoDiv = document.getElementById('tokenInfo');
+    if (infoDiv) {
+        infoDiv.innerHTML = `<strong>Created:</strong> ${created}<br><strong>Expires:</strong> ${expiresIn}`;
+    }
     
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `devices_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.csv`);
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    
-    showToast('Devices exported to CSV', 'success');
+    // Обновляем token виджеты
+    if (window.updateTokenWidgets) {
+        window.updateTokenWidgets(created, expiresIn);
+    }
+}
+
+function formatTime(seconds) {
+    if (seconds <= 0) return 'Expired';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    return `${h}h ${m}m ${s}s`;
 }
 
 // ==================== HISTORY & LOGS ====================
@@ -1414,12 +1375,7 @@ function renderLogs() {
 }
 
 function addLogEntry(category, message) {
-    eventLogs.unshift({
-        time: new Date().toLocaleTimeString(),
-        category,
-        message
-    });
-    
+    eventLogs.unshift({ time: new Date().toLocaleTimeString(), category, message });
     if (eventLogs.length > 200) eventLogs.pop();
     renderLogs();
 }
@@ -1438,7 +1394,6 @@ function showToast(message, type = 'info') {
     `;
     
     container.appendChild(toast);
-    
     setTimeout(() => {
         toast.style.animation = 'slideOutRight 0.3s ease';
         setTimeout(() => toast.remove(), 300);
@@ -1505,826 +1460,38 @@ function escapeHtml(str) {
     });
 }
 
-// ==================== WIDGETS SYSTEM ====================
-let widgets = [];
-let draggedWidget = null;
-let availableWidgets = ['stats', 'token', 'recent_commands'];
+// ==================== EXPORT ====================
 
-async function loadWidgets() {
-    try {
-        const response = await fetch('/api/widgets');
-        const savedWidgets = await response.json();
-        
-        // Если есть сохраненные виджеты (даже пустой массив) - используем их
-        if (savedWidgets && Array.isArray(savedWidgets)) {
-            widgets = savedWidgets;
-        } else {
-            // Только если нет сохраненных данных, устанавливаем дефолтные
-            widgets = [
-                { id: 'stats', type: 'stats', w: 2, h: 1 },
-                { id: 'token', type: 'token', w: 2, h: 1 },
-                { id: 'recent', type: 'recent_commands', w: 2, h: 2 }
-            ];
-            await saveWidgets();
-        }
-        renderWidgets();
-    } catch (e) {
-        console.error('Failed to load widgets', e);
-        // При ошибке загрузки тоже используем сохраненные из localStorage как fallback
-        const localWidgets = localStorage.getItem('widgets_backup');
-        if (localWidgets) {
-            try {
-                widgets = JSON.parse(localWidgets);
-                if (widgets && widgets.length > 0) {
-                    renderWidgets();
-                    return;
-                }
-            } catch(e2) {}
-        }
-        // Если ничего нет - дефолтные
-        widgets = [
-            { id: 'stats', type: 'stats', w: 2, h: 1 },
-            { id: 'token', type: 'token', w: 2, h: 1 },
-            { id: 'recent', type: 'recent_commands', w: 2, h: 2 }
-        ];
-        renderWidgets();
-    }
-}
-
-async function saveWidgets() {
-    try {
-        await fetch('/api/widgets', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(widgets)
-        });
-        // Сохраняем бэкап в localStorage
-        localStorage.setItem('widgets_backup', JSON.stringify(widgets));
-    } catch (e) {
-        console.error('Failed to save widgets', e);
-        // Даже если сервер недоступен, сохраняем в localStorage
-        localStorage.setItem('widgets_backup', JSON.stringify(widgets));
-    }
-}
-
-
-
-function renderWidgets() {
-    const container = document.getElementById('widgetGrid');
-    if (!container) return;
+function exportToCsv() {
+    const headers = ['ID', 'Type', 'Status', 'Last Seen', 'Capabilities'];
+    const rows = Object.entries(devices).map(([id, d]) => [
+        id, d.type, d.status,
+        d.last_seen ? new Date(d.last_seen * 1000).toLocaleString() : '',
+        (d.capabilities || []).join(',')
+    ]);
     
-    if (!widgets || widgets.length === 0) {
-        container.innerHTML = `
-            <div class="empty-widgets" style="grid-column: span 4; text-align: center; padding: 60px 40px; background: var(--bg-secondary); border-radius: 20px; border: 2px dashed var(--border-color);">
-                <i class="fas fa-th-large" style="font-size: 4rem; color: var(--text-muted); margin-bottom: 20px; display: block;"></i>
-                <h3 style="margin-bottom: 10px; color: var(--text-primary);">No Widgets</h3>
-                <p style="color: var(--text-secondary); margin-bottom: 25px;">Click "Add Widget" to customize your dashboard</p>
-                <button class="btn-primary" onclick="showAddWidgetModal()" style="padding: 10px 24px;">
-                    <i class="fas fa-plus"></i> Add Your First Widget
-                </button>
-            </div>
-        `;
-        return;
-    }
-    
-    container.innerHTML = widgets.map(widget => renderWidget(widget)).join('');
-    
-    // Add drag and drop
-    document.querySelectorAll('.dashboard-widget').forEach(el => {
-        el.setAttribute('draggable', 'true');
-        el.addEventListener('dragstart', handleDragStart);
-        el.addEventListener('dragend', handleDragEnd);
-        el.addEventListener('dragover', handleDragOver);
-        el.addEventListener('drop', handleDrop);
+    let csvContent = headers.join(',') + '\n';
+    rows.forEach(row => {
+        csvContent += row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',') + '\n';
     });
     
-    // Add widget controls
-    document.querySelectorAll('.refresh-widget').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const widgetId = btn.dataset.id;
-            const widget = widgets.find(w => w.id === widgetId);
-            if (widget) loadWidgetContent(widget);
-            showToast('Widget refreshed', 'info');
-        });
-    });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `devices_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.csv`);
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
     
-    document.querySelectorAll('.remove-widget').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const widgetId = btn.dataset.id;
-            removeWidget(widgetId);
-        });
-    });
-    
-    // Load widget content
-    widgets.forEach(widget => {
-        loadWidgetContent(widget);
-    });
-}
-
-function renderWidget(widget) {
-    const icons = {
-        stats: 'fa-chart-pie',
-        token: 'fa-key',
-        recent_commands: 'fa-history',
-        system_health: 'fa-heartbeat',
-        clock_calendar: 'fa-calendar-alt',
-        server_uptime: 'fa-server'
-    };
-    
-    const titles = {
-        stats: 'Statistics',
-        token: 'Token Info',
-        recent_commands: 'Recent Commands',
-        system_health: 'System Health',
-        clock_calendar: 'Clock & Calendar',
-        server_uptime: 'Server Uptime'
-    };
-    
-    // Ширина от 1 до 4 колонок
-    const width = widget.w || 2;
-    // Ограничиваем ширину максимум 4
-    const span = Math.min(Math.max(width, 1), 4);
-    
-    return `
-        <div class="dashboard-widget" data-widget-id="${widget.id}" style="grid-column: span ${span};">
-            <div class="widget-header">
-                <h3><i class="fas ${icons[widget.type]}"></i> ${titles[widget.type] || widget.type}</h3>
-                <div class="widget-controls">
-                    <button class="refresh-widget" data-id="${widget.id}" title="Refresh">
-                        <i class="fas fa-sync-alt"></i>
-                    </button>
-                    <button class="remove-widget" data-id="${widget.id}" title="Remove">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-            </div>
-            <div class="widget-content" id="widget-${widget.id}">
-                <div class="loading-placeholder">Loading...</div>
-            </div>
-        </div>
-    `;
-}
-
-async function removeWidget(widgetId) {
-    if (confirm('Remove this widget?')) {
-        const widget = widgets.find(w => w.id === widgetId);
-        if (widget && widget.interval) {
-            clearInterval(widget.interval);
-        }
-        widgets = widgets.filter(w => w.id !== widgetId);
-        await saveWidgets();
-        renderWidgets();
-        showToast('Widget removed', 'success');
-    }
-}
-
-function showAddWidgetModal() {
-    // Удаляем существующий модал, если есть
-    const existingModal = document.getElementById('addWidgetModal');
-    if (existingModal) {
-        existingModal.remove();
-    }
-    
-    const modal = document.createElement('div');
-    modal.className = 'modal';
-    modal.id = 'addWidgetModal';
-    modal.innerHTML = `
-        <div class="modal-content" style="max-width: 500px;">
-            <div class="modal-header">
-                <h3><i class="fas fa-plus-circle" style="color: var(--accent-primary);"></i> Add Widget</h3>
-                <button class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
-                <div class="form-group">
-                    <label><i class="fas fa-chart-simple"></i> Widget Type</label>
-                    <div class="widget-type-options" style="display: flex; flex-direction: column; gap: 10px;">
-                        <!-- Statistics Widget -->
-                        <label class="widget-option" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
-                            <input type="radio" name="widgetType" value="stats" checked style="width: 18px; height: 18px; cursor: pointer;">
-                            <i class="fas fa-chart-pie" style="font-size: 1.5rem; color: var(--accent-primary);"></i>
-                            <div style="flex: 1;">
-                                <div style="font-weight: 600;">Statistics Widget</div>
-                                <div style="font-size: 0.7rem; color: var(--text-muted);">Shows total, online and pending device counts</div>
-                            </div>
-                        </label>
-                        
-                        <!-- Token Info Widget -->
-                        <label class="widget-option" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
-                            <input type="radio" name="widgetType" value="token" style="width: 18px; height: 18px; cursor: pointer;">
-                            <i class="fas fa-key" style="font-size: 1.5rem; color: var(--success);"></i>
-                            <div style="flex: 1;">
-                                <div style="font-weight: 600;">Token Info Widget</div>
-                                <div style="font-size: 0.7rem; color: var(--text-muted);">Displays current token creation and expiration</div>
-                            </div>
-                        </label>
-                        
-                        <!-- Recent Commands Widget -->
-                        <label class="widget-option" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
-                            <input type="radio" name="widgetType" value="recent_commands" style="width: 18px; height: 18px; cursor: pointer;">
-                            <i class="fas fa-history" style="font-size: 1.5rem; color: var(--warning);"></i>
-                            <div style="flex: 1;">
-                                <div style="font-weight: 600;">Recent Commands Widget</div>
-                                <div style="font-size: 0.7rem; color: var(--text-muted);">Shows last 5 executed commands</div>
-                            </div>
-                        </label>
-                        
-                        <!-- System Health Widget -->
-                        <label class="widget-option" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
-                            <input type="radio" name="widgetType" value="system_health" style="width: 18px; height: 18px; cursor: pointer;">
-                            <i class="fas fa-heartbeat" style="font-size: 1.5rem; color: #ef4444;"></i>
-                            <div style="flex: 1;">
-                                <div style="font-weight: 600;">System Health Widget</div>
-                                <div style="font-size: 0.7rem; color: var(--text-muted);">Shows CPU, RAM and Disk usage of Core server</div>
-                            </div>
-                        </label>
-                        
-                        <!-- Clock & Calendar Widget -->
-                        <label class="widget-option" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
-                            <input type="radio" name="widgetType" value="clock_calendar" style="width: 18px; height: 18px; cursor: pointer;">
-                            <i class="fas fa-calendar-alt" style="font-size: 1.5rem; color: #10b981;"></i>
-                            <div style="flex: 1;">
-                                <div style="font-weight: 600;">Clock & Calendar Widget</div>
-                                <div style="font-size: 0.7rem; color: var(--text-muted);">Shows current time, date and monthly calendar</div>
-                            </div>
-                        </label>
-                        
-                        <!-- Server Uptime Widget -->
-                        <label class="widget-option" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
-                            <input type="radio" name="widgetType" value="server_uptime" style="width: 18px; height: 18px; cursor: pointer;">
-                            <i class="fas fa-server" style="font-size: 1.5rem; color: #8b5cf6;"></i>
-                            <div style="flex: 1;">
-                                <div style="font-weight: 600;">Server Uptime Widget</div>
-                                <div style="font-size: 0.7rem; color: var(--text-muted);">Shows system uptime and start time</div>
-                            </div>
-                        </label>
-                    </div>
-                </div>
-                
-                <div class="form-group" style="margin-top: 20px;">
-                    <label><i class="fas fa-arrows-left-right"></i> Widget Width (1-4 columns)</label>
-                    
-                    <!-- Визуальные индикаторы ширины -->
-                    <div style="display: flex; gap: 8px; margin-bottom: 15px;">
-                        <div class="width-indicator" data-width="1" style="flex: 1; text-align: center; cursor: pointer;">
-                            <div style="height: 40px; background: var(--bg-tertiary); border-radius: 8px; border: 2px solid var(--border-color); transition: all 0.2s;">
-                                <div style="height: 100%; width: 25%; background: var(--accent-primary); border-radius: 6px;"></div>
-                            </div>
-                            <span style="font-size: 0.7rem; margin-top: 5px; display: block;">1 col (25%)</span>
-                        </div>
-                        <div class="width-indicator" data-width="2" style="flex: 1; text-align: center; cursor: pointer;">
-                            <div style="height: 40px; background: var(--bg-tertiary); border-radius: 8px; border: 2px solid var(--accent-primary); transition: all 0.2s;">
-                                <div style="height: 100%; width: 50%; background: var(--accent-primary); border-radius: 6px;"></div>
-                            </div>
-                            <span style="font-size: 0.7rem; margin-top: 5px; display: block;">2 col (50%)</span>
-                        </div>
-                        <div class="width-indicator" data-width="3" style="flex: 1; text-align: center; cursor: pointer;">
-                            <div style="height: 40px; background: var(--bg-tertiary); border-radius: 8px; border: 2px solid var(--border-color); transition: all 0.2s;">
-                                <div style="height: 100%; width: 75%; background: var(--accent-primary); border-radius: 6px;"></div>
-                            </div>
-                            <span style="font-size: 0.7rem; margin-top: 5px; display: block;">3 col (75%)</span>
-                        </div>
-                        <div class="width-indicator" data-width="4" style="flex: 1; text-align: center; cursor: pointer;">
-                            <div style="height: 40px; background: var(--bg-tertiary); border-radius: 8px; border: 2px solid var(--border-color); transition: all 0.2s;">
-                                <div style="height: 100%; width: 100%; background: var(--accent-primary); border-radius: 6px;"></div>
-                            </div>
-                            <span style="font-size: 0.7rem; margin-top: 5px; display: block;">4 col (100%)</span>
-                        </div>
-                    </div>
-                    
-                    <!-- Скрытый слайдер -->
-                    <input type="range" id="newWidgetWidth" min="1" max="4" value="2" step="1" style="width: 100%; margin-top: 5px;">
-                    <div id="widthPreview" style="text-align: center; margin-top: 10px; padding: 5px; background: var(--accent-primary); border-radius: 20px; font-size: 0.8rem;">
-                        Width: 2 columns (50%)
-                    </div>
-                </div>
-                
-                <div class="form-group" style="margin-top: 15px; padding: 10px; background: var(--bg-tertiary); border-radius: 10px;">
-                    <div style="font-size: 0.7rem; color: var(--text-muted); text-align: center;">
-                        <i class="fas fa-info-circle"></i> Tip: Widgets can be reordered by dragging
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button id="confirmAddWidgetBtn" class="btn-primary">
-                    <i class="fas fa-plus"></i> Add Widget
-                </button>
-                <button class="btn-secondary modal-cancel">
-                    <i class="fas fa-times"></i> Cancel
-                </button>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    modal.style.display = 'block';
-    
-    // Add hover effects for options
-    const options = modal.querySelectorAll('.widget-option');
-    options.forEach(opt => {
-        opt.addEventListener('mouseenter', () => {
-            opt.style.background = 'var(--bg-secondary)';
-            opt.style.borderColor = 'var(--accent-primary)';
-        });
-        opt.addEventListener('mouseleave', () => {
-            opt.style.background = 'var(--bg-tertiary)';
-            opt.style.borderColor = 'transparent';
-        });
-        // Check radio when clicking anywhere on the option
-        opt.addEventListener('click', (e) => {
-            if (e.target.type !== 'radio') {
-                const radio = opt.querySelector('input[type="radio"]');
-                if (radio) radio.checked = true;
-            }
-        });
-    });
-    
-    // Функция обновления визуальных индикаторов
-    function updateWidthIndicators(value) {
-        const indicators = modal.querySelectorAll('.width-indicator');
-        indicators.forEach((indicator, index) => {
-            const widthValue = parseInt(indicator.dataset.width);
-            const borderDiv = indicator.querySelector('div');
-            if (borderDiv) {
-                if (widthValue === value) {
-                    borderDiv.style.borderColor = 'var(--accent-primary)';
-                    borderDiv.style.borderWidth = '2px';
-                } else {
-                    borderDiv.style.borderColor = 'var(--border-color)';
-                    borderDiv.style.borderWidth = '2px';
-                }
-            }
-        });
-        
-        const preview = document.getElementById('widthPreview');
-        if (preview) {
-            let percent = '';
-            if (value === 1) percent = '25%';
-            else if (value === 2) percent = '50%';
-            else if (value === 3) percent = '75%';
-            else percent = '100%';
-            preview.textContent = `Width: ${value} column${value > 1 ? 's' : ''} (${percent})`;
-        }
-    }
-    
-    // Обработчик для визуальных индикаторов
-    const indicators = modal.querySelectorAll('.width-indicator');
-    indicators.forEach(indicator => {
-        indicator.addEventListener('click', () => {
-            const width = parseInt(indicator.dataset.width);
-            const slider = document.getElementById('newWidgetWidth');
-            if (slider) {
-                slider.value = width;
-                updateWidthIndicators(width);
-            }
-        });
-    });
-    
-    // Width slider
-    const widthSlider = document.getElementById('newWidgetWidth');
-    if (widthSlider) {
-        // Устанавливаем начальное значение
-        widthSlider.value = 2;
-        updateWidthIndicators(2);
-        
-        widthSlider.addEventListener('input', (e) => {
-            const val = parseInt(e.target.value);
-            updateWidthIndicators(val);
-        });
-    }
-    
-    // Закрытие модала
-    const closeModal = () => {
-        modal.remove();
-    };
-    
-    modal.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
-        btn.addEventListener('click', closeModal);
-    });
-    
-    // Клик вне модала
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
-            closeModal();
-        }
-    });
-    
-    // Добавление виджета
-    const confirmBtn = document.getElementById('confirmAddWidgetBtn');
-    if (confirmBtn) {
-        confirmBtn.addEventListener('click', async () => {
-            const selectedRadio = modal.querySelector('input[name="widgetType"]:checked');
-            const type = selectedRadio ? selectedRadio.value : 'stats';
-            const width = parseInt(document.getElementById('newWidgetWidth')?.value || 2);
-            const newId = `${type}_${Date.now()}`;
-            
-            // Определяем высоту виджета в зависимости от типа
-            let height = 1;
-            if (type === 'recent_commands' || type === 'system_health' || type === 'clock_calendar') {
-                height = 2;
-            } else if (type === 'server_uptime') {
-                height = 1;
-            }
-            
-            widgets.push({
-                id: newId,
-                type: type,
-                w: Math.min(Math.max(width, 1), 4),
-                h: height
-            });
-            
-            await saveWidgets();
-            renderWidgets();
-            closeModal();
-            
-            // Показываем разное сообщение в зависимости от типа
-            const typeNames = {
-                'stats': 'Statistics',
-                'token': 'Token Info',
-                'recent_commands': 'Recent Commands',
-                'system_health': 'System Health',
-                'clock_calendar': 'Clock & Calendar',
-                'server_uptime': 'Server Uptime'
-            };
-            showToast(`"${typeNames[type]}" widget added successfully`, 'success');
-        });
-    }
-}
-
-async function resetWidgets() {
-    if (confirm('Reset all widgets to default? This will remove all custom widgets.')) {
-        widgets = [
-            { id: 'stats', type: 'stats', w: 2, h: 1 },
-            { id: 'token', type: 'token', w: 2, h: 1 },
-            { id: 'recent', type: 'recent_commands', w: 2, h: 2 }
-        ];
-        await saveWidgets();
-        // Очищаем бэкап при сбросе
-        localStorage.setItem('widgets_backup', JSON.stringify(widgets));
-        renderWidgets();
-        showToast('Widgets reset to default', 'success');
-    }
-}
-
-function addAddWidgetButton() {
-    // Ищем контейнер виджетов или создаем кнопку в нужном месте
-    const sectionHeader = document.querySelector('#dashboardView .section-header:first-of-type');
-    if (sectionHeader && !document.getElementById('addWidgetBtn')) {
-        const addBtn = document.createElement('button');
-        addBtn.id = 'addWidgetBtn';
-        addBtn.className = 'btn-secondary small';
-        addBtn.innerHTML = '<i class="fas fa-plus"></i> Add Widget';
-        addBtn.style.marginLeft = '10px';
-        addBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            showAddWidgetModal();
-        });
-        sectionHeader.appendChild(addBtn);
-    }
-    
-    // Также проверяем и добавляем обработчик для существующей кнопки, если она уже есть в HTML
-    const existingAddBtn = document.getElementById('addWidgetBtn');
-    if (existingAddBtn && !existingAddBtn.hasListener) {
-        const newBtn = existingAddBtn.cloneNode(true);
-        existingAddBtn.parentNode.replaceChild(newBtn, existingAddBtn);
-        newBtn.id = 'addWidgetBtn';
-        newBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            showAddWidgetModal();
-        });
-        newBtn.hasListener = true;
-    }
-}
-
-function getWidgetTitle(type) {
-    const titles = {
-        stats: 'Statistics',
-        token: 'Token Info',
-        recent_commands: 'Recent Commands'
-    };
-    return titles[type] || type;
-}
-
-function loadWidgetContent(widget) {
-    const container = document.getElementById(`widget-${widget.id}`);
-    if (!container) return;
-    
-    switch (widget.type) {
-        case 'stats':
-            container.innerHTML = `
-                <div class="stats-mini">
-                    <div class="stat-mini"><h4 id="widgetTotal">0</h4><span>Total</span></div>
-                    <div class="stat-mini"><h4 id="widgetOnline">0</h4><span>Online</span></div>
-                    <div class="stat-mini"><h4 id="widgetPending">0</h4><span>Pending</span></div>
-                </div>
-            `;
-            updateMiniStats();
-            break;
-        case 'token':
-            container.innerHTML = `<div id="widgetTokenInfo" class="loading-placeholder">Loading token info...</div>`;
-            requestTokenInfo();
-            break;
-        case 'recent_commands':
-            container.innerHTML = `<div id="widgetRecentCommands" class="recent-commands-list"></div>`;
-            updateRecentCommandsWidget();
-            break;
-        case 'system_health':
-            container.innerHTML = `
-                <div class="system-health-widget">
-                    <div class="health-metric">
-                        <div class="health-label"><i class="fas fa-microchip"></i> CPU</div>
-                        <div class="health-value" id="health-cpu">--%</div>
-                        <div class="health-bar"><div class="health-progress" id="health-cpu-bar" style="width: 0%"></div></div>
-                    </div>
-                    <div class="health-metric">
-                        <div class="health-label"><i class="fas fa-memory"></i> RAM</div>
-                        <div class="health-value" id="health-ram">--%</div>
-                        <div class="health-bar"><div class="health-progress" id="health-ram-bar" style="width: 0%"></div></div>
-                    </div>
-                    <div class="health-metric">
-                        <div class="health-label"><i class="fas fa-hdd"></i> Disk</div>
-                        <div class="health-value" id="health-disk">--%</div>
-                        <div class="health-bar"><div class="health-progress" id="health-disk-bar" style="width: 0%"></div></div>
-                    </div>
-                </div>
-            `;
-            loadSystemHealthWidget();
-            // Обновляем каждые 5 секунд
-            if (widget.interval) clearInterval(widget.interval);
-            widget.interval = setInterval(() => loadSystemHealthWidget(), 5000);
-            break;
-        case 'clock_calendar':
-            container.innerHTML = `
-                <div class="clock-calendar-widget">
-                    <div class="clock-time" id="clock-time">--:--:--</div>
-                    <div class="clock-date" id="clock-date">--</div>
-                    <div class="calendar-grid" id="calendar-grid"></div>
-                </div>
-            `;
-            updateClockWidget();
-            if (widget.interval) clearInterval(widget.interval);
-            widget.interval = setInterval(() => updateClockWidget(), 1000);
-            break;
-        case 'server_uptime':
-            container.innerHTML = `
-                <div class="server-uptime-widget">
-                    <div class="uptime-icon"><i class="fas fa-server"></i></div>
-                    <div class="uptime-info">
-                        <div class="uptime-label">System Uptime</div>
-                        <div class="uptime-value" id="server-uptime-value">--d --h --m</div>
-                    </div>
-                    <div class="uptime-detail">
-                        <div class="uptime-stat"><span>Started:</span> <span id="server-start-time">--</span></div>
-                    </div>
-                </div>
-            `;
-            loadServerUptimeWidget();
-            if (widget.interval) clearInterval(widget.interval);
-            widget.interval = setInterval(() => loadServerUptimeWidget(), 60000);
-            break;
-    }
-}
-
-function requestTokenInfo() {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'get_token_info' }));
-    }
-}
-
-function updateAllWidgets() {
-    updateMiniStats();
-    updateRecentCommandsWidget();
-    // Update token widget from main token info
-    const tokenInfoDiv = document.getElementById('tokenInfo');
-    const widgetTokenInfo = document.getElementById('widgetTokenInfo');
-    if (widgetTokenInfo && tokenInfoDiv) {
-        widgetTokenInfo.innerHTML = tokenInfoDiv.innerHTML;
-    }
-}
-
-function updateMiniStats() {
-    const total = Object.keys(devices).length;
-    const online = Object.values(devices).filter(d => d.status === 'online').length;
-    const pending = Object.values(devices).filter(d => d.status === 'pending').length;
-    
-    const widgetTotal = document.getElementById('widgetTotal');
-    if (widgetTotal) widgetTotal.textContent = total;
-    const widgetOnline = document.getElementById('widgetOnline');
-    if (widgetOnline) widgetOnline.textContent = online;
-    const widgetPending = document.getElementById('widgetPending');
-    if (widgetPending) widgetPending.textContent = pending;
-}
-
-function updateRecentCommandsWidget() {
-    const container = document.getElementById('widgetRecentCommands');
-    if (!container) return;
-    
-    if (commandHistory.length === 0) {
-        container.innerHTML = '<div class="loading-placeholder">No commands</div>';
-        return;
-    }
-    
-    const recent = commandHistory.slice(0, 5);
-    container.innerHTML = recent.map(cmd => `
-        <div class="history-item" style="padding: 8px; font-size:0.75rem;">
-            <span class="history-time">${new Date(cmd.timestamp).toLocaleTimeString()}</span>
-            <span class="history-status ${cmd.status}">${cmd.status === 'pending' ? 'pending' : (cmd.status === 'success' ? 'success' : 'error')}</span>
-            <span class="history-device" style="min-width: 100px;">${escapeHtml(cmd.deviceId)}</span>
-            <span class="history-command">${escapeHtml(cmd.command)}</span>
-        </div>
-    `).join('');
-}
-
-// ==================== SYSTEM HEALTH WIDGET ====================
-async function loadSystemHealthWidget() {
-    try {
-        const response = await fetch('/api/system/metrics');
-        const data = await response.json();
-        
-        if (data.error) {
-            document.querySelectorAll('#health-cpu, #health-ram, #health-disk').forEach(el => {
-                if (el) el.textContent = 'N/A';
-            });
-            return;
-        }
-        
-        const cpu = Math.round(data.cpu_percent);
-        const ram = Math.round(data.memory_percent);
-        const disk = Math.round(data.disk_percent);
-        
-        const cpuEl = document.getElementById('health-cpu');
-        const ramEl = document.getElementById('health-ram');
-        const diskEl = document.getElementById('health-disk');
-        const cpuBar = document.getElementById('health-cpu-bar');
-        const ramBar = document.getElementById('health-ram-bar');
-        const diskBar = document.getElementById('health-disk-bar');
-        
-        if (cpuEl) cpuEl.textContent = `${cpu}%`;
-        if (ramEl) ramEl.textContent = `${ram}%`;
-        if (diskEl) diskEl.textContent = `${disk}%`;
-        if (cpuBar) cpuBar.style.width = `${cpu}%`;
-        if (ramBar) ramBar.style.width = `${ram}%`;
-        if (diskBar) diskBar.style.width = `${disk}%`;
-        
-        // Color coding
-        const setBarColor = (bar, value) => {
-            if (bar) {
-                if (value > 80) bar.style.background = 'var(--danger)';
-                else if (value > 60) bar.style.background = 'var(--warning)';
-                else bar.style.background = 'var(--success)';
-            }
-        };
-        
-        setBarColor(cpuBar, cpu);
-        setBarColor(ramBar, ram);
-        setBarColor(diskBar, disk);
-        
-    } catch (e) {
-        console.error('Failed to load system health:', e);
-    }
-}
-
-// ==================== CLOCK & CALENDAR WIDGET ====================
-function updateClockWidget() {
-    const now = new Date();
-    
-    const timeEl = document.getElementById('clock-time');
-    const dateEl = document.getElementById('clock-date');
-    
-    if (timeEl) {
-        timeEl.textContent = now.toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
-            minute: '2-digit', 
-            second: '2-digit' 
-        });
-    }
-    
-    if (dateEl) {
-        dateEl.textContent = now.toLocaleDateString('en-US', { 
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
-        });
-    }
-    
-    // Update calendar grid
-    const calendarGrid = document.getElementById('calendar-grid');
-    if (calendarGrid) {
-        const year = now.getFullYear();
-        const month = now.getMonth();
-        const firstDay = new Date(year, month, 1).getDay();
-        const daysInMonth = new Date(year, month + 1, 0).getDate();
-        const today = now.getDate();
-        
-        let html = '<div class="calendar-weekdays">';
-        const weekdays = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-        weekdays.forEach(day => {
-            html += `<span class="calendar-weekday">${day}</span>`;
-        });
-        html += '</div><div class="calendar-days">';
-        
-        // Empty cells for days before month starts
-        for (let i = 0; i < firstDay; i++) {
-            html += '<span class="calendar-day empty"></span>';
-        }
-        
-        // Days of month
-        for (let d = 1; d <= daysInMonth; d++) {
-            const isToday = d === today;
-            html += `<span class="calendar-day ${isToday ? 'today' : ''}">${d}</span>`;
-        }
-        
-        html += '</div>';
-        calendarGrid.innerHTML = html;
-    }
-}
-
-// ==================== SERVER UPTIME WIDGET ====================
-async function loadServerUptimeWidget() {
-    try {
-        const response = await fetch('/api/system/metrics');
-        const data = await response.json();
-        
-        if (data.error) {
-            const uptimeEl = document.getElementById('server-uptime-value');
-            if (uptimeEl) uptimeEl.textContent = 'N/A';
-            return;
-        }
-        
-        const uptimeSeconds = data.uptime;
-        const days = Math.floor(uptimeSeconds / 86400);
-        const hours = Math.floor((uptimeSeconds % 86400) / 3600);
-        const minutes = Math.floor((uptimeSeconds % 3600) / 60);
-        
-        const uptimeEl = document.getElementById('server-uptime-value');
-        if (uptimeEl) {
-            if (days > 0) {
-                uptimeEl.textContent = `${days}d ${hours}h ${minutes}m`;
-            } else if (hours > 0) {
-                uptimeEl.textContent = `${hours}h ${minutes}m`;
-            } else {
-                uptimeEl.textContent = `${minutes}m`;
-            }
-        }
-        
-        // Calculate start time
-        const startTime = new Date(Date.now() - uptimeSeconds * 1000);
-        const startTimeEl = document.getElementById('server-start-time');
-        if (startTimeEl) {
-            startTimeEl.textContent = startTime.toLocaleString();
-        }
-        
-    } catch (e) {
-        console.error('Failed to load server uptime:', e);
-    }
-}
-
-function handleDragStart(e) {
-    draggedWidget = e.target.closest('.dashboard-widget');
-    e.dataTransfer.setData('text/plain', draggedWidget.dataset.widgetId);
-    draggedWidget.classList.add('dragging');
-}
-
-function handleDragEnd(e) {
-    if (draggedWidget) draggedWidget.classList.remove('dragging');
-    draggedWidget = null;
-}
-
-function handleDragOver(e) {
-    e.preventDefault();
-}
-
-async function handleDrop(e) {
-    e.preventDefault();
-    const targetWidget = e.target.closest('.dashboard-widget');
-    if (!targetWidget || targetWidget === draggedWidget) return;
-    
-    const fromId = draggedWidget.dataset.widgetId;
-    const toId = targetWidget.dataset.widgetId;
-    
-    const fromIndex = widgets.findIndex(w => w.id === fromId);
-    const toIndex = widgets.findIndex(w => w.id === toId);
-    
-    if (fromIndex !== -1 && toIndex !== -1) {
-        const temp = { ...widgets[fromIndex] };
-        widgets[fromIndex] = { ...widgets[toIndex] };
-        widgets[toIndex] = temp;
-        
-        await fetch('/api/widgets', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(widgets)
-        });
-        
-        renderWidgets();
-    }
+    showToast('Devices exported to CSV', 'success');
 }
 
 // ==================== GROUPS SYSTEM ====================
+// (оставлено без изменений, так как функционал не трогаем)
+
 let groups = {};
 let groupsSidebarOpen = false;
 
@@ -2384,13 +1551,10 @@ function renderGroupsList() {
         </div>
     `).join('');
     
-    // Attach event listeners
     document.querySelectorAll('.remove-from-group').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const groupId = btn.dataset.group;
-            const deviceId = btn.dataset.device;
-            removeDeviceFromGroup(groupId, deviceId);
+            removeDeviceFromGroup(btn.dataset.group, btn.dataset.device);
         });
     });
     
@@ -2414,8 +1578,7 @@ function toggleGroup(groupId) {
 async function createGroup(name) {
     try {
         const response = await fetch('/api/groups', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name })
         });
         if (response.ok) {
@@ -2429,11 +1592,9 @@ async function createGroup(name) {
 
 async function deleteGroup(groupId) {
     if (!confirm('Delete this group? Devices will not be affected.')) return;
-    
     try {
         await fetch('/api/groups', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'DELETE', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ group_id: groupId })
         });
         await loadGroups();
@@ -2446,8 +1607,7 @@ async function deleteGroup(groupId) {
 async function addDeviceToGroup(groupId, deviceId) {
     try {
         await fetch(`/api/groups/${groupId}/devices`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ device_id: deviceId })
         });
         await loadGroups();
@@ -2460,8 +1620,7 @@ async function addDeviceToGroup(groupId, deviceId) {
 async function removeDeviceFromGroup(groupId, deviceId) {
     try {
         await fetch(`/api/groups/${groupId}/devices`, {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'DELETE', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ device_id: deviceId })
         });
         await loadGroups();
@@ -2472,6 +1631,8 @@ async function removeDeviceFromGroup(groupId, deviceId) {
 }
 
 // ==================== TAGS SYSTEM ====================
+// (оставлено без изменений)
+
 let tags = {};
 
 async function loadTags() {
@@ -2512,13 +1673,10 @@ function renderDeviceTags() {
         `;
     });
     
-    // Attach tag event listeners
     document.querySelectorAll('.tag-remove').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const deviceId = btn.dataset.device;
-            const tag = btn.dataset.tag;
-            removeTag(deviceId, tag);
+            removeTag(btn.dataset.device, btn.dataset.tag);
         });
     });
     
@@ -2557,8 +1715,7 @@ async function addTag(deviceId, tag) {
     const newTags = [...currentTags, tag];
     try {
         await fetch('/api/tags', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ device_id: deviceId, tags: newTags })
         });
         tags[deviceId] = newTags;
@@ -2574,8 +1731,7 @@ async function removeTag(deviceId, tag) {
     const newTags = currentTags.filter(t => t !== tag);
     try {
         await fetch('/api/tags', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ device_id: deviceId, tags: newTags })
         });
         tags[deviceId] = newTags;
@@ -2587,17 +1743,17 @@ async function removeTag(deviceId, tag) {
 }
 
 // ==================== MASS SELECTION ====================
+// (оставлено без изменений)
+
 let selectedDevices = new Set();
 
 function toggleDeviceSelection(deviceId, event) {
     if (event) event.stopPropagation();
-    
     if (selectedDevices.has(deviceId)) {
         selectedDevices.delete(deviceId);
     } else {
         selectedDevices.add(deviceId);
     }
-    
     updateMassSelectionUI();
 }
 
@@ -2612,7 +1768,6 @@ function updateMassSelectionUI() {
         massBar.classList.remove('active');
     }
     
-    // Highlight selected cards
     document.querySelectorAll('.device-card').forEach(card => {
         const deviceId = card.dataset.deviceId;
         if (selectedDevices.has(deviceId)) {
@@ -2630,7 +1785,6 @@ function clearSelection() {
 
 async function sendMassCommand() {
     if (selectedDevices.size === 0) return;
-    
     document.getElementById('massDeviceCount').textContent = selectedDevices.size;
     document.getElementById('massCommandModal').style.display = 'block';
 }
@@ -2644,15 +1798,12 @@ async function executeMassCommand() {
         showToast('Invalid JSON payload', 'error');
         return;
     }
-    
     if (!command) {
         showToast('Enter a command', 'error');
         return;
     }
     
-    let successCount = 0;
-    let skippedCount = 0;
-    
+    let successCount = 0, skippedCount = 0;
     for (const deviceId of selectedDevices) {
         const device = devices[deviceId];
         if (device && device.status === 'online') {
@@ -2665,24 +1816,17 @@ async function executeMassCommand() {
     }
     
     let message = `Command sent to ${successCount} devices`;
-    if (skippedCount > 0) {
-        message += ` (${skippedCount} offline/pending skipped)`;
-    }
+    if (skippedCount > 0) message += ` (${skippedCount} offline/pending skipped)`;
     showToast(message, successCount > 0 ? 'success' : 'warning');
-    
     document.getElementById('massCommandModal').style.display = 'none';
     clearSelection();
 }
 
 async function addSelectedToGroup() {
     if (selectedDevices.size === 0) return;
-    
     const select = document.getElementById('groupSelect');
     select.innerHTML = '<option value="">-- Select Group --</option>' + 
-        Object.entries(groups).map(([id, group]) => 
-            `<option value="${id}">${escapeHtml(group.name)}</option>`
-        ).join('');
-    
+        Object.entries(groups).map(([id, group]) => `<option value="${id}">${escapeHtml(group.name)}</option>`).join('');
     document.getElementById('groupDevicesList').textContent = `${selectedDevices.size} devices`;
     document.getElementById('addToGroupModal').style.display = 'block';
 }
@@ -2693,11 +1837,9 @@ async function confirmAddToGroup() {
         showToast('Select a group', 'warning');
         return;
     }
-    
     for (const deviceId of selectedDevices) {
         await addDeviceToGroup(groupId, deviceId);
     }
-    
     showToast(`Added ${selectedDevices.size} devices to group`, 'success');
     document.getElementById('addToGroupModal').style.display = 'none';
     clearSelection();
@@ -2705,7 +1847,6 @@ async function confirmAddToGroup() {
 
 async function massDisconnect() {
     if (selectedDevices.size === 0) return;
-    
     if (confirm(`Disconnect ${selectedDevices.size} devices?`)) {
         for (const deviceId of selectedDevices) {
             disconnectDevice(deviceId);
@@ -2716,119 +1857,76 @@ async function massDisconnect() {
     }
 }
 
-// ==================== UPTIME REPORTS ====================
-let currentUptimeDevice = null;
-let uptimeChart = null;
+// ==================== MODAL HANDLERS ====================
 
-async function showUptimeReport(deviceId) {
-    currentUptimeDevice = deviceId;
-    document.getElementById('uptimeModal').style.display = 'block';
-    await loadUptimeData(7);
-}
-
-async function loadUptimeData(days) {
-    if (!currentUptimeDevice) return;
+function initModalHandlers() {
+    const commandModal = document.getElementById('commandModal');
+    const confirmModal = document.getElementById('confirmModal');
+    const authModal = document.getElementById('authModal');
     
-    try {
-        const response = await fetch(`/api/uptime/${currentUptimeDevice}?days=${days}`);
-        const stats = await response.json();
-        
-        document.getElementById('uptimePercent').textContent = `${stats.online_percent}%`;
-        document.getElementById('onlineHours').textContent = `${stats.total_online}h`;
-        document.getElementById('offlineHours').textContent = `${stats.total_offline}h`;
-        
-        // Update chart (simplified - would need real historical data from API)
-        if (uptimeChart) uptimeChart.destroy();
-        const ctx = document.getElementById('uptimeChart').getContext('2d');
-        uptimeChart = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Online', 'Offline'],
-                datasets: [{
-                    data: [stats.online_percent, 100 - stats.online_percent],
-                    backgroundColor: ['#10b981', '#ef4444'],
-                    borderWidth: 0
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                plugins: { legend: { position: 'bottom' } }
-            }
+    document.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (commandModal) commandModal.style.display = 'none';
+            if (confirmModal) confirmModal.style.display = 'none';
+            if (authModal) authModal.style.display = 'none';
         });
-    } catch (e) {
-        console.error('Failed to load uptime data', e);
-    }
-}
-
-// ==================== ADD TO DEVICE CARD ====================
-// Add selection checkbox to device card
-function addCheckboxToCard(card, deviceId) {
-    const existingCheckbox = card.querySelector('.device-checkbox');
-    if (existingCheckbox) return;
+    });
     
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.className = 'device-checkbox';
-    checkbox.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleDeviceSelection(deviceId, e);
+    document.getElementById('sendCommandBtn')?.addEventListener('click', () => {
+        const deviceId = document.getElementById('modalDeviceId').value;
+        const command = document.getElementById('modalCommand').value.trim();
+        let payload = {};
+        try {
+            payload = JSON.parse(document.getElementById('modalPayload').value);
+        } catch (e) {
+            showToast('Invalid JSON payload', 'error');
+            return;
+        }
+        if (!command) {
+            showToast('Command is required', 'error');
+            return;
+        }
+        sendCommand(deviceId, command, payload);
+        if (commandModal) commandModal.style.display = 'none';
     });
-    card.insertBefore(checkbox, card.firstChild);
-}
-
-// Add uptime button
-function addUptimeButton(card, deviceId) {
-    const actionsDiv = card.querySelector('.card-actions');
-    if (!actionsDiv || actionsDiv.querySelector('.uptime-btn')) return;
     
-    const uptimeBtn = document.createElement('button');
-    uptimeBtn.className = 'btn-secondary';
-    uptimeBtn.innerHTML = '<i class="fas fa-chart-line"></i> Uptime';
-    uptimeBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        showUptimeReport(deviceId);
+    document.getElementById('confirmYesBtn')?.addEventListener('click', () => {
+        if (pendingConfirmation && ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'confirm_response', id: pendingConfirmation.id,
+                device_id: pendingConfirmation.device_id, command: pendingConfirmation.command,
+                params: pendingConfirmation.params, approved: true
+            }));
+            showToast(`Command "${pendingConfirmation.command}" confirmed`, 'warning');
+        }
+        if (confirmModal) confirmModal.style.display = 'none';
+        pendingConfirmation = null;
     });
-    actionsDiv.appendChild(uptimeBtn);
+    
+    document.getElementById('confirmNoBtn')?.addEventListener('click', () => {
+        if (confirmModal) confirmModal.style.display = 'none';
+        pendingConfirmation = null;
+    });
+    
+    document.getElementById('authApproveBtn')?.addEventListener('click', () => {
+        if (pendingAuthRequest) approveDevice(pendingAuthRequest.device_id, true);
+        if (authModal) authModal.style.display = 'none';
+    });
+    
+    document.getElementById('authDenyBtn')?.addEventListener('click', () => {
+        if (pendingAuthRequest) approveDevice(pendingAuthRequest.device_id, false);
+        if (authModal) authModal.style.display = 'none';
+    });
+    
+    window.onclick = (e) => {
+        if (commandModal && e.target === commandModal) commandModal.style.display = 'none';
+        if (confirmModal && e.target === confirmModal) confirmModal.style.display = 'none';
+        if (authModal && e.target === authModal) authModal.style.display = 'none';
+    };
 }
-
-
-// Add sidebar toggle for groups
-document.getElementById('groupsSidebarBtn')?.addEventListener('click', () => {
-    groupsSidebarOpen = !groupsSidebarOpen;
-    document.getElementById('groupsSidebar').classList.toggle('open');
-});
-
-// Add mass selection event listeners
-document.getElementById('massCommandBtn')?.addEventListener('click', sendMassCommand);
-document.getElementById('massGroupBtn')?.addEventListener('click', addSelectedToGroup);
-document.getElementById('massDisconnectBtn')?.addEventListener('click', massDisconnect);
-document.getElementById('massClearBtn')?.addEventListener('click', clearSelection);
-document.getElementById('massCommandSendBtn')?.addEventListener('click', executeMassCommand);
-document.getElementById('confirmAddToGroupBtn')?.addEventListener('click', confirmAddToGroup);
-document.getElementById('createGroupBtn')?.addEventListener('click', () => {
-    document.getElementById('createGroupModal').style.display = 'block';
-});
-document.getElementById('createGroupConfirmBtn')?.addEventListener('click', () => {
-    const name = document.getElementById('newGroupName').value.trim();
-    if (name) {
-        createGroup(name);
-        document.getElementById('createGroupModal').style.display = 'none';
-        document.getElementById('newGroupName').value = '';
-    }
-});
-document.getElementById('resetWidgetsBtn')?.addEventListener('click', resetWidgets);
-
-// Uptime period buttons
-document.querySelectorAll('.period-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        loadUptimeData(parseInt(btn.dataset.days));
-    });
-});
 
 // ==================== BROADCAST ====================
+
 async function sendBroadcastCommand() {
     const command = document.getElementById('broadcastCommand').value.trim();
     let payload = {};
@@ -2838,18 +1936,12 @@ async function sendBroadcastCommand() {
         showToast('Invalid JSON payload', 'error');
         return;
     }
-    
     if (!command) {
         showToast('Enter a command', 'error');
         return;
     }
-    
     if (confirm(`Send "${command}" to ALL online devices?`)) {
-        ws.send(JSON.stringify({
-            type: 'broadcast_command',
-            command: command,
-            payload: payload
-        }));
+        ws.send(JSON.stringify({ type: 'broadcast_command', command: command, payload: payload }));
         showToast(`Broadcasting "${command}" to all devices...`, 'info');
         document.getElementById('broadcastModal').style.display = 'none';
         document.getElementById('broadcastCommand').value = '';
@@ -2858,6 +1950,7 @@ async function sendBroadcastCommand() {
 }
 
 // ==================== SYSTEM METRICS ====================
+
 async function loadSystemMetrics() {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'get_system_metrics' }));
@@ -2879,7 +1972,6 @@ function updateSystemMetrics(metrics) {
     document.getElementById('ramBar').style.width = `${ram}%`;
     document.getElementById('diskBar').style.width = `${disk}%`;
     
-    // Color coding
     const cpuBar = document.getElementById('cpuBar');
     if (cpu > 80) cpuBar.style.background = 'var(--danger)';
     else if (cpu > 60) cpuBar.style.background = 'var(--warning)';
@@ -2887,6 +1979,7 @@ function updateSystemMetrics(metrics) {
 }
 
 // ==================== BLACKLIST ====================
+
 async function loadBlacklist() {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'get_blacklist' }));
@@ -2913,8 +2006,7 @@ function updateBlacklist(devices) {
     
     document.querySelectorAll('.remove-from-blacklist').forEach(btn => {
         btn.addEventListener('click', () => {
-            const deviceId = btn.dataset.device;
-            ws.send(JSON.stringify({ type: 'blacklist_remove', device_id: deviceId }));
+            ws.send(JSON.stringify({ type: 'blacklist_remove', device_id: btn.dataset.device }));
         });
     });
 }
@@ -2925,23 +2017,21 @@ async function addToBlacklist() {
         showToast('Enter device ID', 'warning');
         return;
     }
-    
     ws.send(JSON.stringify({ type: 'blacklist_add', device_id: deviceId }));
     document.getElementById('blacklistDeviceId').value = '';
     showToast(`Device ${deviceId} added to blacklist`, 'warning');
 }
 
 // ==================== AUDIT LOG ====================
-let auditLogData = []; // Храним все логи
+
+let auditLogData = [];
 let auditCurrentPage = 1;
 let auditItemsPerPage = 25;
 
 async function loadAuditLog(resetPage = true) {
-    if (resetPage) {
-        auditCurrentPage = 1;
-    }
+    if (resetPage) auditCurrentPage = 1;
     if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'get_audit_log', limit: 500 })); // Запрашиваем больше логов
+        ws.send(JSON.stringify({ type: 'get_audit_log', limit: 500 }));
     }
 }
 
@@ -2951,33 +2041,24 @@ function updateAuditLog(logs) {
     const search = document.getElementById('auditSearch')?.value.toLowerCase() || '';
     
     if (!container) return;
-    
-    // Сохраняем все логи
     auditLogData = logs;
     
     let filteredLogs = logs;
-    if (filter !== 'all') {
-        filteredLogs = filteredLogs.filter(log => log.event_type === filter);
-    }
-    if (search) {
-        filteredLogs = filteredLogs.filter(log => 
-            (log.device_id && log.device_id.toLowerCase().includes(search)) ||
-            (log.details && log.details.toLowerCase().includes(search))
-        );
-    }
+    if (filter !== 'all') filteredLogs = filteredLogs.filter(log => log.event_type === filter);
+    if (search) filteredLogs = filteredLogs.filter(log => 
+        (log.device_id && log.device_id.toLowerCase().includes(search)) ||
+        (log.details && log.details.toLowerCase().includes(search))
+    );
     
     if (filteredLogs.length === 0) {
         container.innerHTML = '<div class="loading-placeholder">No audit logs</div>';
         return;
     }
     
-    // Пагинация
     const totalPages = Math.ceil(filteredLogs.length / auditItemsPerPage);
     const start = (auditCurrentPage - 1) * auditItemsPerPage;
-    const end = start + auditItemsPerPage;
-    const pageLogs = filteredLogs.slice(start, end);
+    const pageLogs = filteredLogs.slice(start, start + auditItemsPerPage);
     
-    // Отображаем логи
     let html = pageLogs.map(log => `
         <div class="audit-item">
             <span class="audit-time">${new Date(log.timestamp * 1000).toLocaleString()}</span>
@@ -2988,7 +2069,6 @@ function updateAuditLog(logs) {
         </div>
     `).join('');
     
-    // Добавляем пагинацию
     if (totalPages > 1) {
         html += `
             <div class="audit-pagination">
@@ -3002,41 +2082,20 @@ function updateAuditLog(logs) {
             </div>
         `;
     }
-    
     container.innerHTML = html;
 }
 
 function changeAuditPage(direction) {
     auditCurrentPage += direction;
-    // Не обновляем фильтры, просто перерисовываем с текущими данными
-    const filter = document.getElementById('auditEventFilter')?.value || 'all';
-    const search = document.getElementById('auditSearch')?.value.toLowerCase() || '';
-    
-    let filteredLogs = auditLogData;
-    if (filter !== 'all') {
-        filteredLogs = filteredLogs.filter(log => log.event_type === filter);
-    }
-    if (search) {
-        filteredLogs = filteredLogs.filter(log => 
-            (log.device_id && log.device_id.toLowerCase().includes(search)) ||
-            (log.details && log.details.toLowerCase().includes(search))
-        );
-    }
-    
-    const totalPages = Math.ceil(filteredLogs.length / auditItemsPerPage);
-    if (auditCurrentPage < 1) auditCurrentPage = 1;
-    if (auditCurrentPage > totalPages) auditCurrentPage = totalPages;
-    
     updateAuditLog(auditLogData);
 }
 
-
 // ==================== COMMAND STATS ====================
+
 let commandsChart = null;
 let currentStatPeriod = 'day';
 
 async function loadCommandStats(period = 'day') {
-    // Stats from localStorage commandHistory
     const now = Date.now();
     let cutoff;
     if (period === 'day') cutoff = now - 24 * 3600 * 1000;
@@ -3047,21 +2106,16 @@ async function loadCommandStats(period = 'day') {
     const total = filtered.length;
     const success = filtered.filter(cmd => cmd.status === 'success').length;
     const successRate = total > 0 ? Math.round(success / total * 100) : 0;
-    
-    // Average response time (mock - would need from server)
     const avgResponse = Math.round(Math.random() * 200 + 50);
     
     document.getElementById('totalCommands').textContent = total;
     document.getElementById('successRate').textContent = `${successRate}%`;
     document.getElementById('avgResponse').textContent = `${avgResponse}ms`;
     
-    // Group by hour/day
     const grouped = {};
     filtered.forEach(cmd => {
         const date = new Date(cmd.timestamp);
-        let key;
-        if (period === 'day') key = `${date.getHours()}:00`;
-        else key = date.toLocaleDateString();
+        let key = period === 'day' ? `${date.getHours()}:00` : date.toLocaleDateString();
         grouped[key] = (grouped[key] || 0) + 1;
     });
     
@@ -3073,38 +2127,19 @@ async function loadCommandStats(period = 'day') {
     if (ctx) {
         commandsChart = new Chart(ctx, {
             type: 'line',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Commands',
-                    data: data,
-                    borderColor: 'var(--accent-primary)',
-                    backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                    fill: true,
-                    tension: 0.4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                plugins: { legend: { position: 'top' } },
-                scales: { y: { beginAtZero: true, grid: { color: 'var(--border-color)' } } }
-            }
+            data: { labels: labels, datasets: [{ label: 'Commands', data: data, borderColor: 'var(--accent-primary)', backgroundColor: 'rgba(99, 102, 241, 0.1)', fill: true, tension: 0.4 }] },
+            options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'top' } }, scales: { y: { beginAtZero: true, grid: { color: 'var(--border-color)' } } } }
         });
     }
 }
 
-
 // ==================== INIT ADMIN LISTENERS ====================
+
 function initAdminListeners() {
-    // Broadcast button in header
     const broadcastHeaderBtn = document.createElement('button');
     broadcastHeaderBtn.className = 'btn-secondary broadcast-btn';
     broadcastHeaderBtn.innerHTML = '<i class="fas fa-broadcast-tower"></i> Broadcast';
-    broadcastHeaderBtn.title = 'Send command to all devices';
-    broadcastHeaderBtn.addEventListener('click', () => {
-        document.getElementById('broadcastModal').style.display = 'block';
-    });
+    broadcastHeaderBtn.addEventListener('click', () => document.getElementById('broadcastModal').style.display = 'block');
     document.querySelector('.header-actions')?.prepend(broadcastHeaderBtn);
     
     document.getElementById('sendBroadcastBtn')?.addEventListener('click', sendBroadcastCommand);
@@ -3112,14 +2147,8 @@ function initAdminListeners() {
     document.getElementById('refreshBlacklistBtn')?.addEventListener('click', loadBlacklist);
     document.getElementById('refreshAuditBtn')?.addEventListener('click', loadAuditLog);
     document.getElementById('addToBlacklistBtn')?.addEventListener('click', addToBlacklist);
-    document.getElementById('auditEventFilter')?.addEventListener('change', () => {
-        auditCurrentPage = 1;
-        loadAuditLog();
-    });
-    document.getElementById('auditSearch')?.addEventListener('input', () => {
-        auditCurrentPage = 1;
-        loadAuditLog();
-    });
+    document.getElementById('auditEventFilter')?.addEventListener('change', () => { auditCurrentPage = 1; loadAuditLog(); });
+    document.getElementById('auditSearch')?.addEventListener('input', () => { auditCurrentPage = 1; loadAuditLog(); });
     
     document.querySelectorAll('.stats-period .period-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -3129,7 +2158,7 @@ function initAdminListeners() {
             loadCommandStats(currentStatPeriod);
         });
     });
-
+    
     const auditPerPage = document.getElementById('auditPerPage');
     if (auditPerPage) {
         auditPerPage.addEventListener('change', (e) => {
@@ -3140,437 +2169,34 @@ function initAdminListeners() {
     }
 }
 
-// ==================== НОВЫЕ ФУНКЦИИ ДЛЯ РАСШИРЕННОГО СТАТУСА ====================
+// ==================== EXTENDED STATUS ====================
 
 function updateExtendedStatus(deviceId, substatus, details) {
-    if (!extendedStatuses[deviceId]) {
-        extendedStatuses[deviceId] = {};
-    }
-    extendedStatuses[deviceId] = {
-        substatus: substatus,
-        details: details,
-        lastUpdate: Date.now()
-    };
-    
-    // Обновляем отображение устройства
+    if (!extendedStatuses[deviceId]) extendedStatuses[deviceId] = {};
+    extendedStatuses[deviceId] = { substatus: substatus, details: details, lastUpdate: Date.now() };
     const card = document.querySelector(`.device-card[data-device-id="${deviceId}"]`);
-    if (card) {
-        updateDeviceStatusDisplay(card, deviceId);
-    }
+    if (card) updateDeviceStatusDisplay(card, deviceId);
 }
 
 function getSubstatusIcon(substatus) {
-    const icons = {
-        'idle': 'fa-bed',
-        'working': 'fa-cogs',
-        'sleeping': 'fa-moon',
-        'charging': 'fa-battery-full',
-        'error': 'fa-exclamation-triangle',
-        'updating': 'fa-sync-alt',
-        'maintenance': 'fa-wrench'
-    };
+    const icons = { 'idle': 'fa-bed', 'working': 'fa-cogs', 'sleeping': 'fa-moon', 'charging': 'fa-battery-full', 'error': 'fa-exclamation-triangle', 'updating': 'fa-sync-alt', 'maintenance': 'fa-wrench' };
     return icons[substatus] || 'fa-info-circle';
 }
 
 function getSubstatusColor(substatus) {
-    const colors = {
-        'idle': 'var(--text-muted)',
-        'working': 'var(--success)',
-        'sleeping': 'var(--info)',
-        'charging': 'var(--success)',
-        'error': 'var(--danger)',
-        'updating': 'var(--warning)'
-    };
+    const colors = { 'idle': 'var(--text-muted)', 'working': 'var(--success)', 'sleeping': 'var(--info)', 'charging': 'var(--success)', 'error': 'var(--danger)', 'updating': 'var(--warning)' };
     return colors[substatus] || 'var(--text-secondary)';
 }
-
-// ==================== НОВЫЕ ФУНКЦИИ ДЛЯ МЕТРИК ====================
-
-function updateDeviceMetrics(deviceId, metrics, timestamp) {
-    // Сохраняем метрики в глобальном объекте devices
-    if (devices[deviceId]) {
-        devices[deviceId].last_metrics = metrics;
-        devices[deviceId].last_metrics_time = timestamp;
-        
-        // Обновляем карточку устройства
-        const card = document.querySelector(`.device-card[data-device-id="${deviceId}"]`);
-        if (card) {
-            // Обновляем отображение метрик
-            let metricsDiv = card.querySelector('.device-metrics');
-            if (!metricsDiv) {
-                const deviceTypeDiv = card.querySelector('.device-type');
-                metricsDiv = document.createElement('div');
-                metricsDiv.className = 'device-metrics';
-                deviceTypeDiv.after(metricsDiv);
-            }
-            
-            let metricsHtml = '<div class="metrics-row">';
-            if (metrics.cpu !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-microchip"></i> CPU: ${metrics.cpu}%</span>`;
-            if (metrics.memory_percent !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-memory"></i> RAM: ${metrics.memory_percent}%</span>`;
-            if (metrics.disk_percent !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-hdd"></i> Disk: ${metrics.disk_percent}%</span>`;
-            if (metrics.temperature !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-thermometer-half"></i> ${metrics.temperature}°C</span>`;
-            if (metrics.humidity !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-tint"></i> ${metrics.humidity}%</span>`;
-            metricsHtml += '</div>';
-            
-            metricsDiv.innerHTML = metricsHtml || '<span class="metric-badge">No metrics yet</span>';
-        }
-    }
-}
-
-function updateMetricsDisplay(card, deviceId, metrics) {
-    let metricsDiv = card.querySelector('.device-metrics');
-    if (!metricsDiv) {
-        metricsDiv = document.createElement('div');
-        metricsDiv.className = 'device-metrics';
-        card.querySelector('.device-type').after(metricsDiv);
-    }
-    
-    let html = '<div class="metrics-row">';
-    
-    // CPU
-    if (metrics.cpu !== undefined) {
-        html += `<span class="metric-badge"><i class="fas fa-microchip"></i> ${metrics.cpu}%</span>`;
-    }
-    
-    // Температура
-    if (metrics.temperature !== undefined) {
-        html += `<span class="metric-badge"><i class="fas fa-thermometer-half"></i> ${metrics.temperature}°C</span>`;
-    }
-    
-    // Влажность
-    if (metrics.humidity !== undefined) {
-        html += `<span class="metric-badge"><i class="fas fa-tint"></i> ${metrics.humidity}%</span>`;
-    }
-    
-    // Батарея
-    if (metrics.battery !== undefined) {
-        const batteryColor = metrics.battery < 20 ? 'danger' : (metrics.battery < 50 ? 'warning' : 'success');
-        html += `<span class="metric-badge ${batteryColor}"><i class="fas fa-battery-${metrics.battery > 75 ? 'full' : (metrics.battery > 50 ? 'half' : 'quarter')}"></i> ${metrics.battery}%</span>`;
-    }
-    
-    // Уровень воды (для увлажнителя)
-    if (metrics.water_level !== undefined) {
-        html += `<span class="metric-badge"><i class="fas fa-water"></i> ${metrics.water_level}%</span>`;
-    }
-    
-    // Память
-    if (metrics.memory_percent !== undefined) {
-        html += `<span class="metric-badge"><i class="fas fa-memory"></i> ${metrics.memory_percent}%</span>`;
-    }
-    
-    html += '</div>';
-    metricsDiv.innerHTML = html;
-}
-
-// ==================== ФУНКЦИИ ДЛЯ СВЯЗИ УСТРОЙСТВО->УСТРОЙСТВО ====================
-
-function sendDeviceToDevice(fromDeviceId, toDeviceId, command, payload, requireResponse = false) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-        showToast('Not connected to Core', 'error');
-        return;
-    }
-    
-    const msgId = generateUUID();
-    const msg = {
-        type: 'device_to_device',
-        from_device_id: fromDeviceId,
-        to_device_id: toDeviceId,
-        command: command,
-        payload: payload,
-        require_response: requireResponse,
-        id: msgId
-    };
-    
-    ws.send(JSON.stringify(msg));
-    addLogEntry('device_to_device', `${fromDeviceId} → ${toDeviceId}: ${command}`);
-    showToast(`Command sent to ${toDeviceId}`, 'info');
-    
-    return msgId;
-}
-
-function showDeviceToDeviceModal(deviceId) {
-    const modal = document.createElement('div');
-    modal.className = 'modal';
-    modal.id = 'd2dModal';
-    modal.innerHTML = `
-        <div class="modal-content" style="max-width: 500px;">
-            <div class="modal-header">
-                <h3><i class="fas fa-exchange-alt"></i> Send to Device</h3>
-                <button class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>From Device</label>
-                    <input type="text" id="d2dFromDevice" readonly value="${deviceId}">
-                </div>
-                <div class="form-group">
-                    <label>Target Device</label>
-                    <select id="d2dTargetDevice" class="form-control">
-                        ${Object.entries(devices)
-                            .filter(([id, d]) => id !== deviceId && d.status === 'online')
-                            .map(([id, d]) => `<option value="${id}">${id} (${d.type})</option>`)
-                            .join('')}
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Command</label>
-                    <input type="text" id="d2dCommand" placeholder="e.g., get_status, reboot">
-                </div>
-                <div class="form-group">
-                    <label>Payload (JSON)</label>
-                    <textarea id="d2dPayload" rows="3" placeholder="{}"></textarea>
-                </div>
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="d2dRequireResponse">
-                        <span>Require response</span>
-                    </label>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button id="sendD2DBtn" class="btn-primary">Send</button>
-                <button class="btn-secondary modal-cancel">Cancel</button>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    modal.style.display = 'block';
-    
-    modal.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
-        btn.addEventListener('click', () => modal.remove());
-    });
-    
-    document.getElementById('sendD2DBtn').addEventListener('click', () => {
-        const targetDevice = document.getElementById('d2dTargetDevice').value;
-        const command = document.getElementById('d2dCommand').value.trim();
-        let payload = {};
-        try {
-            payload = JSON.parse(document.getElementById('d2dPayload').value);
-        } catch (e) {
-            showToast('Invalid JSON payload', 'error');
-            return;
-        }
-        const requireResponse = document.getElementById('d2dRequireResponse').checked;
-        
-        if (!targetDevice || !command) {
-            showToast('Target device and command are required', 'warning');
-            return;
-        }
-        
-        sendDeviceToDevice(deviceId, targetDevice, command, payload, requireResponse);
-        modal.remove();
-    });
-}
-
-// ==================== МОДАЛЬНОЕ ОКНО МЕТРИК ====================
-
-function showMetricsModal(deviceId) {
-    const modal = document.createElement('div');
-    modal.className = 'modal metrics-modal';
-    modal.id = 'metricsModal';
-    modal.dataset.deviceId = deviceId;
-    modal.innerHTML = `
-        <div class="modal-content" style="max-width: 800px;">
-            <div class="modal-header">
-                <h3><i class="fas fa-chart-line"></i> Metrics: ${deviceId}</h3>
-                <button class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="metrics-period-selector">
-                    <button class="period-btn active" data-hours="1">Last Hour</button>
-                    <button class="period-btn" data-hours="6">6 Hours</button>
-                    <button class="period-btn" data-hours="24">24 Hours</button>
-                </div>
-                <div class="metrics-selector">
-                    <label class="checkbox-label">
-                        <input type="checkbox" class="metric-toggle" data-metric="cpu"> CPU
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" class="metric-toggle" data-metric="temperature"> Temperature
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" class="metric-toggle" data-metric="humidity"> Humidity
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" class="metric-toggle" data-metric="battery"> Battery
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" class="metric-toggle" data-metric="memory_percent"> Memory
-                    </label>
-                </div>
-                <div class="metrics-chart-container">
-                    <canvas id="metricsChart"></canvas>
-                </div>
-                <div class="current-metrics" id="currentMetrics"></div>
-            </div>
-            <div class="modal-footer">
-                <button id="refreshMetricsBtn" class="btn-secondary">
-                    <i class="fas fa-sync-alt"></i> Request Fresh Metrics
-                </button>
-                <button class="btn-secondary modal-cancel">Close</button>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    modal.style.display = 'block';
-    
-    modal.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
-        btn.addEventListener('click', () => {
-            if (metricsCharts[deviceId]) {
-                metricsCharts[deviceId].destroy();
-                delete metricsCharts[deviceId];
-            }
-            modal.remove();
-        });
-    });
-    
-    // Загружаем метрики
-    loadMetricsHistory(deviceId, 1);
-    
-    // Периоды
-    modal.querySelectorAll('.period-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            modal.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            const hours = parseInt(btn.dataset.hours);
-            loadMetricsHistory(deviceId, hours);
-        });
-    });
-    
-    // Toggle метрик
-    modal.querySelectorAll('.metric-toggle').forEach(toggle => {
-        toggle.addEventListener('change', () => {
-            loadMetricsHistory(deviceId, parseInt(modal.querySelector('.period-btn.active').dataset.hours));
-        });
-    });
-    
-    // Запрос свежих метрик
-    document.getElementById('refreshMetricsBtn').addEventListener('click', () => {
-        requestDeviceMetrics(deviceId);
-        setTimeout(() => {
-            loadMetricsHistory(deviceId, parseInt(modal.querySelector('.period-btn.active').dataset.hours));
-        }, 2000);
-    });
-}
-
-function loadMetricsHistory(deviceId, hours) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    
-    const activeMetrics = Array.from(document.querySelectorAll('.metric-toggle:checked'))
-        .map(cb => cb.dataset.metric);
-    
-    ws.send(JSON.stringify({
-        type: 'get_device_metrics',
-        device_id: deviceId,
-        hours: hours,
-        metrics: activeMetrics
-    }));
-    
-    // Временный обработчик
-    const handler = (data) => {
-        if (data.type === 'device_metrics' && data.device_id === deviceId) {
-            updateMetricsChart(deviceId, data.metrics);
-            ws.removeEventListener('message', handler);
-        }
-    };
-    ws.addEventListener('message', handler);
-    
-    // Таймаут
-    setTimeout(() => ws.removeEventListener('message', handler), 5000);
-}
-
-function updateMetricsChart(deviceId, metricsData) {
-    const chartCanvas = document.getElementById('metricsChart');
-    if (!chartCanvas) return;
-    
-    if (metricsCharts[deviceId]) {
-        metricsCharts[deviceId].destroy();
-    }
-    
-    const activeMetrics = Array.from(document.querySelectorAll('.metric-toggle:checked'))
-        .map(cb => cb.dataset.metric);
-    
-    if (activeMetrics.length === 0 || !metricsData || metricsData.length === 0) {
-        chartCanvas.getContext('2d').clearRect(0, 0, chartCanvas.width, chartCanvas.height);
-        return;
-    }
-    
-    const timestamps = metricsData.map(m => new Date(m.timestamp * 1000).toLocaleTimeString());
-    const datasets = [];
-    const colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
-    
-    activeMetrics.forEach((metric, idx) => {
-        const values = metricsData.map(m => m.metrics[metric]);
-        if (values.some(v => v !== undefined)) {
-            datasets.push({
-                label: metric.replace('_', ' ').toUpperCase(),
-                data: values,
-                borderColor: colors[idx % colors.length],
-                backgroundColor: 'transparent',
-                tension: 0.4,
-                fill: false
-            });
-        }
-    });
-    
-    const ctx = chartCanvas.getContext('2d');
-    metricsCharts[deviceId] = new Chart(ctx, {
-        type: 'line',
-        data: { labels: timestamps, datasets: datasets },
-        options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            plugins: {
-                legend: { position: 'top' },
-                tooltip: { mode: 'index', intersect: false }
-            },
-            scales: { y: { beginAtZero: true } }
-        }
-    });
-    
-    // Показываем последние метрики
-    const lastMetrics = metricsData[metricsData.length - 1];
-    if (lastMetrics) {
-        const container = document.getElementById('currentMetrics');
-        if (container) {
-            container.innerHTML = `
-                <div class="current-metrics-header">Latest Metrics (${new Date(lastMetrics.timestamp * 1000).toLocaleString()}):</div>
-                <div class="current-metrics-values">
-                    ${Object.entries(lastMetrics.metrics).map(([k, v]) => 
-                        `<span class="metric-value-badge">${k}: ${typeof v === 'number' ? v.toFixed(1) : v}</span>`
-                    ).join('')}
-                </div>
-            `;
-        }
-    }
-}
-
-function requestDeviceMetrics(deviceId) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({
-        type: 'request_device_metrics',
-        device_id: deviceId,
-        metric_types: null
-    }));
-    showToast(`Metrics requested from ${deviceId}`, 'info');
-}
-
-// ==================== ОБНОВЛЕНИЕ ОТОБРАЖЕНИЯ КАРТОЧКИ УСТРОЙСТВА ====================
 
 function updateDeviceStatusDisplay(card, deviceId) {
     const device = devices[deviceId];
     const extended = extendedStatuses[deviceId];
-    
     let statusHtml = `<span class="status-badge ${device?.status || 'offline'}">${device?.status || 'offline'}</span>`;
-    
     if (extended && extended.substatus) {
         statusHtml += `<span class="substatus-badge" style="background: ${getSubstatusColor(extended.substatus)}20; color: ${getSubstatusColor(extended.substatus)}">
             <i class="fas ${getSubstatusIcon(extended.substatus)}"></i> ${extended.substatus}
         </span>`;
     }
-    
     const header = card.querySelector('.card-header');
     if (header) {
         let statusDiv = header.querySelector('.device-status-container');
@@ -3583,33 +2209,237 @@ function updateDeviceStatusDisplay(card, deviceId) {
     }
 }
 
-// ==================== ДОБАВЛЕНИЕ КНОПОК В КАРТОЧКИ УСТРОЙСТВ ====================
+// ==================== DEVICE METRICS ====================
+
+function updateDeviceMetrics(deviceId, metrics, timestamp) {
+    if (devices[deviceId]) {
+        devices[deviceId].last_metrics = metrics;
+        devices[deviceId].last_metrics_time = timestamp;
+        const card = document.querySelector(`.device-card[data-device-id="${deviceId}"]`);
+        if (card) {
+            let metricsDiv = card.querySelector('.device-metrics');
+            if (!metricsDiv) {
+                metricsDiv = document.createElement('div');
+                metricsDiv.className = 'device-metrics';
+                card.querySelector('.device-type').after(metricsDiv);
+            }
+            let metricsHtml = '<div class="metrics-row">';
+            if (metrics.cpu !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-microchip"></i> CPU: ${metrics.cpu}%</span>`;
+            if (metrics.memory_percent !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-memory"></i> RAM: ${metrics.memory_percent}%</span>`;
+            if (metrics.disk_percent !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-hdd"></i> Disk: ${metrics.disk_percent}%</span>`;
+            if (metrics.temperature !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-thermometer-half"></i> ${metrics.temperature}°C</span>`;
+            if (metrics.humidity !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-tint"></i> ${metrics.humidity}%</span>`;
+            metricsHtml += '</div>';
+            metricsDiv.innerHTML = metricsHtml || '<span class="metric-badge">No metrics yet</span>';
+        }
+    }
+}
+
+// ==================== DEVICE TO DEVICE ====================
+
+function sendDeviceToDevice(fromDeviceId, toDeviceId, command, payload, requireResponse = false) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        showToast('Not connected to Core', 'error');
+        return;
+    }
+    const msgId = generateUUID();
+    ws.send(JSON.stringify({ type: 'device_to_device', from_device_id: fromDeviceId, to_device_id: toDeviceId, command: command, payload: payload, require_response: requireResponse, id: msgId }));
+    addLogEntry('device_to_device', `${fromDeviceId} → ${toDeviceId}: ${command}`);
+    showToast(`Command sent to ${toDeviceId}`, 'info');
+    return msgId;
+}
+
+function showDeviceToDeviceModal(deviceId) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'd2dModal';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header"><h3><i class="fas fa-exchange-alt"></i> Send to Device</h3><button class="modal-close">&times;</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>From Device</label><input type="text" id="d2dFromDevice" readonly value="${deviceId}"></div>
+                <div class="form-group"><label>Target Device</label><select id="d2dTargetDevice" class="form-control">${Object.entries(devices).filter(([id, d]) => id !== deviceId && d.status === 'online').map(([id, d]) => `<option value="${id}">${id} (${d.type})</option>`).join('')}</select></div>
+                <div class="form-group"><label>Command</label><input type="text" id="d2dCommand" placeholder="e.g., get_status, reboot"></div>
+                <div class="form-group"><label>Payload (JSON)</label><textarea id="d2dPayload" rows="3" placeholder="{}"></textarea></div>
+                <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="d2dRequireResponse"><span>Require response</span></label></div>
+            </div>
+            <div class="modal-footer"><button id="sendD2DBtn" class="btn-primary">Send</button><button class="btn-secondary modal-cancel">Cancel</button></div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.style.display = 'block';
+    modal.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => btn.addEventListener('click', () => modal.remove()));
+    document.getElementById('sendD2DBtn').addEventListener('click', () => {
+        const targetDevice = document.getElementById('d2dTargetDevice').value;
+        const command = document.getElementById('d2dCommand').value.trim();
+        let payload = {};
+        try { payload = JSON.parse(document.getElementById('d2dPayload').value); } catch (e) { showToast('Invalid JSON payload', 'error'); return; }
+        const requireResponse = document.getElementById('d2dRequireResponse').checked;
+        if (!targetDevice || !command) { showToast('Target device and command are required', 'warning'); return; }
+        sendDeviceToDevice(deviceId, targetDevice, command, payload, requireResponse);
+        modal.remove();
+    });
+}
+
+// ==================== METRICS MODAL ====================
+
+function showMetricsModal(deviceId) {
+    const modal = document.createElement('div');
+    modal.className = 'modal metrics-modal';
+    modal.id = 'metricsModal';
+    modal.dataset.deviceId = deviceId;
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header"><h3><i class="fas fa-chart-line"></i> Metrics: ${deviceId}</h3><button class="modal-close">&times;</button></div>
+            <div class="modal-body">
+                <div class="metrics-period-selector"><button class="period-btn active" data-hours="1">Last Hour</button><button class="period-btn" data-hours="6">6 Hours</button><button class="period-btn" data-hours="24">24 Hours</button></div>
+                <div class="metrics-selector">
+                    <label class="checkbox-label"><input type="checkbox" class="metric-toggle" data-metric="cpu"> CPU</label>
+                    <label class="checkbox-label"><input type="checkbox" class="metric-toggle" data-metric="temperature"> Temperature</label>
+                    <label class="checkbox-label"><input type="checkbox" class="metric-toggle" data-metric="humidity"> Humidity</label>
+                    <label class="checkbox-label"><input type="checkbox" class="metric-toggle" data-metric="battery"> Battery</label>
+                    <label class="checkbox-label"><input type="checkbox" class="metric-toggle" data-metric="memory_percent"> Memory</label>
+                </div>
+                <div class="metrics-chart-container"><canvas id="metricsChart"></canvas></div>
+                <div class="current-metrics" id="currentMetrics"></div>
+            </div>
+            <div class="modal-footer"><button id="refreshMetricsBtn" class="btn-secondary"><i class="fas fa-sync-alt"></i> Request Fresh Metrics</button><button class="btn-secondary modal-cancel">Close</button></div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.style.display = 'block';
+    modal.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => btn.addEventListener('click', () => { if (metricsCharts[deviceId]) { metricsCharts[deviceId].destroy(); delete metricsCharts[deviceId]; } modal.remove(); }));
+    loadMetricsHistory(deviceId, 1);
+    modal.querySelectorAll('.period-btn').forEach(btn => btn.addEventListener('click', () => { modal.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); loadMetricsHistory(deviceId, parseInt(btn.dataset.hours)); }));
+    modal.querySelectorAll('.metric-toggle').forEach(toggle => toggle.addEventListener('change', () => loadMetricsHistory(deviceId, parseInt(modal.querySelector('.period-btn.active').dataset.hours))));
+    document.getElementById('refreshMetricsBtn').addEventListener('click', () => { requestDeviceMetrics(deviceId); setTimeout(() => loadMetricsHistory(deviceId, parseInt(modal.querySelector('.period-btn.active').dataset.hours)), 2000); });
+}
+
+function loadMetricsHistory(deviceId, hours) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const activeMetrics = Array.from(document.querySelectorAll('.metric-toggle:checked')).map(cb => cb.dataset.metric);
+    ws.send(JSON.stringify({ type: 'get_device_metrics', device_id: deviceId, hours: hours, metrics: activeMetrics }));
+    const handler = (data) => { if (data.type === 'device_metrics' && data.device_id === deviceId) { updateMetricsChart(deviceId, data.metrics); ws.removeEventListener('message', handler); } };
+    ws.addEventListener('message', handler);
+    setTimeout(() => ws.removeEventListener('message', handler), 5000);
+}
+
+function updateMetricsChart(deviceId, metricsData) {
+    const chartCanvas = document.getElementById('metricsChart');
+    if (!chartCanvas) return;
+    if (metricsCharts[deviceId]) metricsCharts[deviceId].destroy();
+    const activeMetrics = Array.from(document.querySelectorAll('.metric-toggle:checked')).map(cb => cb.dataset.metric);
+    if (activeMetrics.length === 0 || !metricsData || metricsData.length === 0) { chartCanvas.getContext('2d').clearRect(0, 0, chartCanvas.width, chartCanvas.height); return; }
+    const timestamps = metricsData.map(m => new Date(m.timestamp * 1000).toLocaleTimeString());
+    const datasets = [];
+    const colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+    activeMetrics.forEach((metric, idx) => {
+        const values = metricsData.map(m => m.metrics[metric]);
+        if (values.some(v => v !== undefined)) datasets.push({ label: metric.replace('_', ' ').toUpperCase(), data: values, borderColor: colors[idx % colors.length], backgroundColor: 'transparent', tension: 0.4, fill: false });
+    });
+    const ctx = chartCanvas.getContext('2d');
+    metricsCharts[deviceId] = new Chart(ctx, { type: 'line', data: { labels: timestamps, datasets: datasets }, options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'top' }, tooltip: { mode: 'index', intersect: false } }, scales: { y: { beginAtZero: true } } } });
+    const lastMetrics = metricsData[metricsData.length - 1];
+    if (lastMetrics) {
+        const container = document.getElementById('currentMetrics');
+        if (container) container.innerHTML = `<div class="current-metrics-header">Latest Metrics (${new Date(lastMetrics.timestamp * 1000).toLocaleString()}):</div><div class="current-metrics-values">${Object.entries(lastMetrics.metrics).map(([k, v]) => `<span class="metric-value-badge">${k}: ${typeof v === 'number' ? v.toFixed(1) : v}</span>`).join('')}</div>`;
+    }
+}
+
+function requestDeviceMetrics(deviceId) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'request_device_metrics', device_id: deviceId, metric_types: null }));
+    showToast(`Metrics requested from ${deviceId}`, 'info');
+}
+
+// ==================== ADD TO DEVICE CARD ====================
 
 function addDeviceActionButtons(card, deviceId) {
     const actionsDiv = card.querySelector('.card-actions');
     if (!actionsDiv) return;
-    
-    // Кнопка отправки другому устройству
     if (!actionsDiv.querySelector('.d2d-btn')) {
         const d2dBtn = document.createElement('button');
         d2dBtn.className = 'btn-secondary d2d-btn';
         d2dBtn.innerHTML = '<i class="fas fa-exchange-alt"></i> Send to Device';
-        d2dBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            showDeviceToDeviceModal(deviceId);
-        });
+        d2dBtn.addEventListener('click', (e) => { e.stopPropagation(); showDeviceToDeviceModal(deviceId); });
         actionsDiv.appendChild(d2dBtn);
     }
-    
-    // Кнопка метрик
     if (!actionsDiv.querySelector('.metrics-btn')) {
         const metricsBtn = document.createElement('button');
         metricsBtn.className = 'btn-secondary metrics-btn';
         metricsBtn.innerHTML = '<i class="fas fa-chart-line"></i> Metrics';
-        metricsBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            showMetricsModal(deviceId);
-        });
+        metricsBtn.addEventListener('click', (e) => { e.stopPropagation(); showMetricsModal(deviceId); });
         actionsDiv.appendChild(metricsBtn);
     }
 }
+
+function addCheckboxToCard(card, deviceId) {
+    if (card.querySelector('.device-checkbox')) return;
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'device-checkbox';
+    checkbox.addEventListener('click', (e) => { e.stopPropagation(); toggleDeviceSelection(deviceId, e); });
+    card.insertBefore(checkbox, card.firstChild);
+}
+
+function addUptimeButton(card, deviceId) {
+    const actionsDiv = card.querySelector('.card-actions');
+    if (!actionsDiv || actionsDiv.querySelector('.uptime-btn')) return;
+    const uptimeBtn = document.createElement('button');
+    uptimeBtn.className = 'btn-secondary';
+    uptimeBtn.innerHTML = '<i class="fas fa-chart-line"></i> Uptime';
+    uptimeBtn.addEventListener('click', (e) => { e.stopPropagation(); showUptimeReport(deviceId); });
+    actionsDiv.appendChild(uptimeBtn);
+}
+
+// ==================== UPTIME REPORTS ====================
+
+let currentUptimeDevice = null;
+let uptimeChart = null;
+
+async function showUptimeReport(deviceId) {
+    currentUptimeDevice = deviceId;
+    document.getElementById('uptimeModal').style.display = 'block';
+    await loadUptimeData(7);
+}
+
+async function loadUptimeData(days) {
+    if (!currentUptimeDevice) return;
+    try {
+        const response = await fetch(`/api/uptime/${currentUptimeDevice}?days=${days}`);
+        const stats = await response.json();
+        document.getElementById('uptimePercent').textContent = `${stats.online_percent}%`;
+        document.getElementById('onlineHours').textContent = `${stats.total_online}h`;
+        document.getElementById('offlineHours').textContent = `${stats.total_offline}h`;
+        if (uptimeChart) uptimeChart.destroy();
+        const ctx = document.getElementById('uptimeChart').getContext('2d');
+        uptimeChart = new Chart(ctx, { type: 'doughnut', data: { labels: ['Online', 'Offline'], datasets: [{ data: [stats.online_percent, 100 - stats.online_percent], backgroundColor: ['#10b981', '#ef4444'], borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'bottom' } } } });
+    } catch (e) { console.error('Failed to load uptime data', e); }
+}
+
+// ==================== SIDEBAR & BUTTONS ====================
+
+document.getElementById('groupsSidebarBtn')?.addEventListener('click', () => {
+    groupsSidebarOpen = !groupsSidebarOpen;
+    document.getElementById('groupsSidebar').classList.toggle('open');
+});
+
+document.getElementById('massCommandBtn')?.addEventListener('click', sendMassCommand);
+document.getElementById('massGroupBtn')?.addEventListener('click', addSelectedToGroup);
+document.getElementById('massDisconnectBtn')?.addEventListener('click', massDisconnect);
+document.getElementById('massClearBtn')?.addEventListener('click', clearSelection);
+document.getElementById('massCommandSendBtn')?.addEventListener('click', executeMassCommand);
+document.getElementById('confirmAddToGroupBtn')?.addEventListener('click', confirmAddToGroup);
+document.getElementById('createGroupBtn')?.addEventListener('click', () => document.getElementById('createGroupModal').style.display = 'block');
+document.getElementById('createGroupConfirmBtn')?.addEventListener('click', () => {
+    const name = document.getElementById('newGroupName').value.trim();
+    if (name) { createGroup(name); document.getElementById('createGroupModal').style.display = 'none'; document.getElementById('newGroupName').value = ''; }
+});
+
+document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadUptimeData(parseInt(btn.dataset.days));
+    });
+});

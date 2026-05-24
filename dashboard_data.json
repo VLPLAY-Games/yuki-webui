@@ -1,5 +1,24 @@
 {
   "groups": {},
   "tags": {},
-  "widgets": []
+  "widgets": [
+    {
+      "id": "stats_default",
+      "type": "stats",
+      "w": 2,
+      "h": 1
+    },
+    {
+      "id": "token_default",
+      "type": "token",
+      "w": 2,
+      "h": 1
+    },
+    {
+      "id": "recent_default",
+      "type": "recent_commands",
+      "w": 2,
+      "h": 2
+    }
+  ]
 }
