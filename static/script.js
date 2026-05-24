@@ -526,6 +526,15 @@ function switchView(view) {
     if (view === 'devices') renderDevices();
     if (view === 'history') renderHistory();
     if (view === 'logs') renderLogs();
+    
+    if (view === 'admin') {
+        // Загружаем данные при открытии админ-панели
+        loadSystemMetrics();      // Системные метрики
+        loadBlacklist();          // Черный список
+        loadAuditLog();           // Audit лог
+        loadCommandStats(currentStatPeriod || 'day');  // Статистика команд
+        showToast('Admin panel data loaded', 'info');
+    }
 }
 
 function initModalHandlers() {
@@ -751,19 +760,6 @@ function handleMessage(data) {
                 renderDevices();
             }
             break;
-        case 'system_metrics':
-            updateSystemMetrics(data.payload);
-            break;
-        case 'blacklist':
-            updateBlacklist(data.devices);
-            break;
-        case 'audit_log':
-            updateAuditLog(data.logs);
-            break;
-        case 'broadcast_result':
-            showToast(`Broadcast sent to ${data.sent} devices`, 'success');
-            break;
-
         case 'system_metrics':
             updateSystemMetrics(data.payload);
             break;
