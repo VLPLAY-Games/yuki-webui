@@ -1211,6 +1211,19 @@ function getDeviceIcon(deviceType) {
 // ==================== COMMANDS ====================
 
 function showCommandModal(deviceId) {
+    const device = devices[deviceId];
+    
+    // Проверяем, существует ли устройство и онлайн ли оно
+    if (!device) {
+        showToast('Device not found', 'error');
+        return;
+    }
+    
+    if (device.status !== 'online') {
+        showToast(`Cannot send command to offline/pending device (status: ${device.status})`, 'warning');
+        return;
+    }
+    
     const modalDeviceId = document.getElementById('modalDeviceId');
     if (modalDeviceId) modalDeviceId.value = deviceId;
     const modalCommand = document.getElementById('modalCommand');
@@ -1222,6 +1235,14 @@ function showCommandModal(deviceId) {
 }
 
 function sendCommand(deviceId, command, payload, callback) {
+    // Добавляем проверку статуса
+    const device = devices[deviceId];
+    if (!device || device.status !== 'online') {
+        showToast(`Cannot send command: device ${deviceId} is ${device?.status || 'offline'}`, 'error');
+        if (callback) callback(false);
+        return;
+    }
+
     if (!ws || ws.readyState !== WebSocket.OPEN) {
         showToast('Not connected to Core', 'error');
         if (callback) callback(false);
@@ -2129,16 +2150,25 @@ async function executeMassCommand() {
     }
     
     let successCount = 0;
+    let skippedCount = 0;
+    
     for (const deviceId of selectedDevices) {
         const device = devices[deviceId];
         if (device && device.status === 'online') {
             sendCommand(deviceId, command, payload);
             successCount++;
-            await new Promise(r => setTimeout(r, 100)); // small delay
+            await new Promise(r => setTimeout(r, 100));
+        } else {
+            skippedCount++;
         }
     }
     
-    showToast(`Command sent to ${successCount} devices`, 'success');
+    let message = `Command sent to ${successCount} devices`;
+    if (skippedCount > 0) {
+        message += ` (${skippedCount} offline/pending skipped)`;
+    }
+    showToast(message, successCount > 0 ? 'success' : 'warning');
+    
     document.getElementById('massCommandModal').style.display = 'none';
     clearSelection();
 }
