@@ -7,11 +7,11 @@ if (typeof widgetManager !== 'undefined') {
         description: 'Displays current token creation and expiration',
         defaultWidth: 2,
         defaultHeight: 1,
-        
+
         updater: (widgetId) => {
             const container = document.getElementById(`widget-${widgetId}`);
             if (!container) return;
-            
+
             // Пытаемся получить сохраненную информацию о токене
             const savedTokenInfo = localStorage.getItem('yuki_token_info');
             if (savedTokenInfo) {
@@ -23,23 +23,23 @@ if (typeof widgetManager !== 'undefined') {
                     }
                 } catch(e) {}
             }
-            
+
             // Если нет сохраненной информации, показываем загрузку
             container.innerHTML = `<div class="loading-placeholder" style="font-size:0.8rem;">Waiting for token info...</div>`;
         },
-        
+
         onInit: (widgetId) => {
             if (!window.tokenWidgets) window.tokenWidgets = [];
             if (!window.tokenWidgets.includes(widgetId)) {
                 window.tokenWidgets.push(widgetId);
             }
-            
+
             // Запрашиваем информацию о токене, если WebSocket открыт
             if (window.ws && window.ws.readyState === WebSocket.OPEN) {
-                window.ws.send(JSON.stringify({ type: 'get_token_info' }));
+                window.ws.send(getTokenInfoRequestMessage().toString());
             }
         },
-        
+
         onRemove: (widgetId) => {
             if (window.tokenWidgets) {
                 window.tokenWidgets = window.tokenWidgets.filter(id => id !== widgetId);
@@ -56,7 +56,7 @@ window.updateTokenWidgets = function(created, expiresIn) {
         expiresIn: expiresIn,
         updated: Date.now()
     }));
-    
+
     // Обновляем все виджеты токена
     if (window.tokenWidgets) {
         window.tokenWidgets.forEach(widgetId => {

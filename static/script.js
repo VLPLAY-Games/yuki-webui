@@ -1,4 +1,4 @@
-// script.js - Modern Dashboard with Settings (Core only)
+// script.js - Modern Dashboard with Settings (использует yuki-protocol.js)
 // Виджеты вынесены в отдельные файлы в папке widgets/
 
 // State
@@ -51,7 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
     historyList = document.getElementById('historyList');
     logsContainer = document.getElementById('logsContainer');
     searchInput = document.getElementById('searchInput');
-    
+
     loadSettings();
     initTheme();
     initEventListeners();
@@ -61,13 +61,13 @@ document.addEventListener('DOMContentLoaded', () => {
     loadGroups();
     loadTags();
     initAdminListeners();
-    
+
     setInterval(updateDashboardStats, 1000);
     setInterval(updateServerInfo, 5000);
     setInterval(loadSystemMetrics, 10000);
-    
+
     updateServerInfo();
-    
+
     // Инициализация виджетов после загрузки
     setTimeout(() => {
         if (widgetManager) {
@@ -85,19 +85,19 @@ function initSettingsListeners() {
     if (saveSettingsBtn) {
         saveSettingsBtn.addEventListener('click', saveSettings);
     }
-    
+
     // Reset settings button
     const resetSettingsBtn = document.getElementById('resetSettingsBtn');
     if (resetSettingsBtn) {
         resetSettingsBtn.addEventListener('click', resetSettings);
     }
-    
+
     // Export settings
     const exportSettingsBtn = document.getElementById('exportSettingsBtn');
     if (exportSettingsBtn) {
         exportSettingsBtn.addEventListener('click', exportSettings);
     }
-    
+
     // Import settings
     const importSettingsBtn = document.getElementById('importSettingsBtn');
     if (importSettingsBtn) {
@@ -105,24 +105,24 @@ function initSettingsListeners() {
             document.getElementById('importSettingsFile').click();
         });
     }
-    
+
     const importSettingsFile = document.getElementById('importSettingsFile');
     if (importSettingsFile) {
         importSettingsFile.addEventListener('change', importSettings);
     }
-    
+
     // Apply connection settings
     const applyConnectionBtn = document.getElementById('applyConnectionBtn');
     if (applyConnectionBtn) {
         applyConnectionBtn.addEventListener('click', applyConnectionSettings);
     }
-    
+
     // Test connection
     const testConnectionBtn = document.getElementById('testConnectionBtn');
     if (testConnectionBtn) {
         testConnectionBtn.addEventListener('click', testConnection);
     }
-    
+
     // Theme select
     const themeSelect = document.getElementById('themeSelect');
     if (themeSelect) {
@@ -132,7 +132,7 @@ function initSettingsListeners() {
             saveSettings();
         });
     }
-    
+
     // Auto reconnect toggle
     const autoReconnectToggle = document.getElementById('autoReconnectToggle');
     if (autoReconnectToggle) {
@@ -141,7 +141,7 @@ function initSettingsListeners() {
             saveSettings();
         });
     }
-    
+
     // Reconnect delay
     const reconnectDelay = document.getElementById('reconnectDelay');
     if (reconnectDelay) {
@@ -150,7 +150,7 @@ function initSettingsListeners() {
             saveSettings();
         });
     }
-    
+
     // Max reconnect attempts
     const maxReconnectAttempts = document.getElementById('maxReconnectAttempts');
     if (maxReconnectAttempts) {
@@ -159,7 +159,7 @@ function initSettingsListeners() {
             saveSettings();
         });
     }
-    
+
     // Default view
     const defaultView = document.getElementById('defaultView');
     if (defaultView) {
@@ -168,7 +168,7 @@ function initSettingsListeners() {
             saveSettings();
         });
     }
-    
+
     // Default display mode
     const defaultDisplayMode = document.getElementById('defaultDisplayMode');
     if (defaultDisplayMode) {
@@ -177,7 +177,7 @@ function initSettingsListeners() {
             saveSettings();
         });
     }
-    
+
     // Animations toggle
     const animationsToggle = document.getElementById('animationsToggle');
     if (animationsToggle) {
@@ -186,13 +186,13 @@ function initSettingsListeners() {
             saveSettings();
         });
     }
-    
+
     // Clear all data
     const clearAllDataBtn = document.getElementById('clearAllDataBtn');
     if (clearAllDataBtn) {
         clearAllDataBtn.addEventListener('click', clearAllData);
     }
-    
+
     // History limit
     const historyLimit = document.getElementById('historyLimit');
     if (historyLimit) {
@@ -223,7 +223,7 @@ function resetSettings() {
         };
         saveSettings();
         applyTheme(settings.theme);
-        
+
         // Reset UI elements
         document.getElementById('wsAddress').value = settings.wsAddress;
         document.getElementById('autoReconnectToggle').checked = settings.autoReconnect;
@@ -234,9 +234,9 @@ function resetSettings() {
         document.getElementById('defaultDisplayMode').value = settings.defaultDisplayMode;
         document.getElementById('animationsToggle').checked = settings.animationsEnabled;
         document.getElementById('historyLimit').value = settings.historyLimit;
-        
+
         showToast('Settings reset to defaults', 'success');
-        
+
         // Reconnect with new settings
         if (ws) {
             ws.close();
@@ -251,7 +251,7 @@ function exportSettings() {
         version: '2.0.0',
         exportDate: new Date().toISOString()
     };
-    
+
     const blob = new Blob([JSON.stringify(settingsData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -265,7 +265,7 @@ function exportSettings() {
 function importSettings(event) {
     const file = event.target.files[0];
     if (!file) return;
-    
+
     const reader = new FileReader();
     reader.onload = (e) => {
         try {
@@ -274,7 +274,7 @@ function importSettings(event) {
                 settings = { ...settings, ...data.settings };
                 saveSettings();
                 applyTheme(settings.theme);
-                
+
                 // Update UI
                 document.getElementById('wsAddress').value = settings.wsAddress;
                 document.getElementById('autoReconnectToggle').checked = settings.autoReconnect;
@@ -285,9 +285,9 @@ function importSettings(event) {
                 document.getElementById('defaultDisplayMode').value = settings.defaultDisplayMode;
                 document.getElementById('animationsToggle').checked = settings.animationsEnabled;
                 document.getElementById('historyLimit').value = settings.historyLimit;
-                
+
                 showToast('Settings imported successfully', 'success');
-                
+
                 // Reconnect
                 if (ws) {
                     ws.close();
@@ -320,7 +320,7 @@ function applyConnectionSettings() {
     if (newAddress && newAddress !== settings.wsAddress) {
         settings.wsAddress = newAddress;
         saveSettings();
-        
+
         if (ws) {
             ws.close();
             setTimeout(connectWebSocket, 1000);
@@ -332,7 +332,7 @@ function applyConnectionSettings() {
 function testConnection() {
     const address = document.getElementById('wsAddress').value.trim();
     showToast(`Testing connection to ${address}...`, 'info');
-    
+
     const testWs = new WebSocket(address);
     testWs.onopen = () => {
         showToast(`Connection successful to ${address}`, 'success');
@@ -381,10 +381,10 @@ function clearAllData() {
     if (confirm('⚠️ WARNING: This will clear ALL data including command history, event logs, groups, and tags. This cannot be undone. Continue?')) {
         // Clear command history
         commandHistory = [];
-        
+
         // Clear event logs
         eventLogs = [];
-        
+
         // Clear groups (via API)
         Object.keys(device_groups || {}).forEach(async groupId => {
             try {
@@ -395,26 +395,26 @@ function clearAllData() {
                 });
             } catch(e) {}
         });
-        
+
         // Clear local storage
         localStorage.removeItem('commandHistory');
         localStorage.removeItem('widgets_backup');
-        
+
         // Clear device tags
         device_tags = {};
-        
+
         // Save to server
         saveStoredData();
-        
+
         // Reload groups and tags
         loadGroups();
         loadTags();
-        
+
         // Re-render views
         renderHistory();
         renderLogs();
         renderDevices();
-        
+
         showToast('All data cleared successfully', 'success');
     }
 }
@@ -429,46 +429,46 @@ function loadSettings() {
             settings = { ...settings, ...parsed };
         } catch (e) {}
     }
-    
+
     const wsAddressEl = document.getElementById('wsAddress');
     if (wsAddressEl) wsAddressEl.value = settings.wsAddress;
-    
+
     const autoReconnectEl = document.getElementById('autoReconnectToggle');
     if (autoReconnectEl) autoReconnectEl.checked = settings.autoReconnect;
-    
+
     const reconnectDelayEl = document.getElementById('reconnectDelay');
     if (reconnectDelayEl) reconnectDelayEl.value = settings.reconnectDelay;
-    
+
     const maxReconnectAttemptsEl = document.getElementById('maxReconnectAttempts');
     if (maxReconnectAttemptsEl) maxReconnectAttemptsEl.value = settings.maxReconnectAttempts;
-    
+
     const themeSelectEl = document.getElementById('themeSelect');
     if (themeSelectEl) themeSelectEl.value = settings.theme;
-    
+
     const defaultViewEl = document.getElementById('defaultView');
     if (defaultViewEl) defaultViewEl.value = settings.defaultView;
-    
+
     const defaultDisplayModeEl = document.getElementById('defaultDisplayMode');
     if (defaultDisplayModeEl) defaultDisplayModeEl.value = settings.defaultDisplayMode;
-    
+
     const animationsToggleEl = document.getElementById('animationsToggle');
     if (animationsToggleEl) animationsToggleEl.checked = settings.animationsEnabled;
-    
+
     const notifyDeviceOnlineEl = document.getElementById('notifyDeviceOnline');
     if (notifyDeviceOnlineEl) notifyDeviceOnlineEl.checked = settings.notifyDeviceOnline;
-    
+
     const notifyDeviceOfflineEl = document.getElementById('notifyDeviceOffline');
     if (notifyDeviceOfflineEl) notifyDeviceOfflineEl.checked = settings.notifyDeviceOffline;
-    
+
     const notifyCommandResultEl = document.getElementById('notifyCommandResult');
     if (notifyCommandResultEl) notifyCommandResultEl.checked = settings.notifyCommandResult;
-    
+
     const notifyPendingDeviceEl = document.getElementById('notifyPendingDevice');
     if (notifyPendingDeviceEl) notifyPendingDeviceEl.checked = settings.notifyPendingDevice;
-    
+
     const historyLimitEl = document.getElementById('historyLimit');
     if (historyLimitEl) historyLimitEl.value = settings.historyLimit;
-    
+
     if (settings.theme === 'auto') {
         const darkModeMedia = window.matchMedia('(prefers-color-scheme: dark)');
         currentTheme = darkModeMedia.matches ? 'dark' : 'light';
@@ -483,7 +483,7 @@ function loadSettings() {
         currentTheme = settings.theme;
         document.documentElement.setAttribute('data-theme', currentTheme);
     }
-    
+
     if (settings.defaultView !== 'dashboard') {
         setTimeout(() => {
             switchView(settings.defaultView);
@@ -495,7 +495,7 @@ function loadSettings() {
             });
         }, 100);
     }
-    
+
     currentViewMode = settings.defaultDisplayMode;
     document.querySelectorAll('.view-btn').forEach(btn => {
         btn.classList.remove('active');
@@ -503,7 +503,7 @@ function loadSettings() {
             btn.classList.add('active');
         }
     });
-    
+
     if (!settings.animationsEnabled) {
         document.body.classList.add('no-animations');
     }
@@ -512,51 +512,51 @@ function loadSettings() {
 function saveSettings() {
     const wsAddressEl = document.getElementById('wsAddress');
     if (wsAddressEl) settings.wsAddress = wsAddressEl.value;
-    
+
     const autoReconnectEl = document.getElementById('autoReconnectToggle');
     if (autoReconnectEl) settings.autoReconnect = autoReconnectEl.checked;
-    
+
     const reconnectDelayEl = document.getElementById('reconnectDelay');
     if (reconnectDelayEl) settings.reconnectDelay = parseInt(reconnectDelayEl.value);
-    
+
     const maxReconnectAttemptsEl = document.getElementById('maxReconnectAttempts');
     if (maxReconnectAttemptsEl) settings.maxReconnectAttempts = parseInt(maxReconnectAttemptsEl.value);
-    
+
     const themeSelectEl = document.getElementById('themeSelect');
     if (themeSelectEl) settings.theme = themeSelectEl.value;
-    
+
     const defaultViewEl = document.getElementById('defaultView');
     if (defaultViewEl) settings.defaultView = defaultViewEl.value;
-    
+
     const defaultDisplayModeEl = document.getElementById('defaultDisplayMode');
     if (defaultDisplayModeEl) settings.defaultDisplayMode = defaultDisplayModeEl.value;
-    
+
     const animationsToggleEl = document.getElementById('animationsToggle');
     if (animationsToggleEl) settings.animationsEnabled = animationsToggleEl.checked;
-    
+
     const notifyDeviceOnlineEl = document.getElementById('notifyDeviceOnline');
     if (notifyDeviceOnlineEl) settings.notifyDeviceOnline = notifyDeviceOnlineEl.checked;
-    
+
     const notifyDeviceOfflineEl = document.getElementById('notifyDeviceOffline');
     if (notifyDeviceOfflineEl) settings.notifyDeviceOffline = notifyDeviceOfflineEl.checked;
-    
+
     const notifyCommandResultEl = document.getElementById('notifyCommandResult');
     if (notifyCommandResultEl) settings.notifyCommandResult = notifyCommandResultEl.checked;
-    
+
     const notifyPendingDeviceEl = document.getElementById('notifyPendingDevice');
     if (notifyPendingDeviceEl) settings.notifyPendingDevice = notifyPendingDeviceEl.checked;
-    
+
     const historyLimitEl = document.getElementById('historyLimit');
     if (historyLimitEl) settings.historyLimit = parseInt(historyLimitEl.value);
-    
+
     localStorage.setItem('yuki_settings', JSON.stringify(settings));
-    
+
     if (settings.animationsEnabled) {
         document.body.classList.remove('no-animations');
     } else {
         document.body.classList.add('no-animations');
     }
-    
+
     showToast('Settings saved', 'success');
 }
 
@@ -574,19 +574,19 @@ function initTheme() {
             showToast(`Theme changed to ${currentTheme}`, 'success');
         });
     }
-    
+
     // Handle collapsed sidebar theme icons click
     function setupCollapsedThemeIcons() {
         const sunIcon = document.querySelector('.sidebar.collapsed .theme-toggle .fa-sun');
         const moonIcon = document.querySelector('.sidebar.collapsed .theme-toggle .fa-moon');
-        
+
         if (sunIcon && moonIcon) {
             // Remove existing listeners to avoid duplicates
             const newSun = sunIcon.cloneNode(true);
             const newMoon = moonIcon.cloneNode(true);
             sunIcon.parentNode.replaceChild(newSun, sunIcon);
             moonIcon.parentNode.replaceChild(newMoon, moonIcon);
-            
+
             newSun.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (currentTheme !== 'light') {
@@ -598,7 +598,7 @@ function initTheme() {
                     showToast('Theme changed to light', 'success');
                 }
             });
-            
+
             newMoon.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (currentTheme !== 'dark') {
@@ -612,15 +612,15 @@ function initTheme() {
             });
         }
     }
-    
+
     // Run initially and when sidebar collapse state changes
     setupCollapsedThemeIcons();
-    
+
     // Watch for sidebar collapse changes
     const observer = new MutationObserver(() => {
         setupCollapsedThemeIcons();
     });
-    
+
     const sidebar = document.getElementById('sidebar');
     if (sidebar) {
         observer.observe(sidebar, { attributes: true, attributeFilter: ['class'] });
@@ -633,7 +633,7 @@ function initEventListeners() {
     document.getElementById('sidebarToggle')?.addEventListener('click', () => {
         sidebar.classList.toggle('collapsed');
     });
-    
+
     document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', () => {
             const view = item.dataset.view;
@@ -642,7 +642,7 @@ function initEventListeners() {
             item.classList.add('active');
         });
     });
-    
+
     document.querySelectorAll('.filter-chip').forEach(chip => {
         chip.addEventListener('click', () => {
             currentFilter = chip.dataset.filter;
@@ -651,7 +651,7 @@ function initEventListeners() {
             renderDevices();
         });
     });
-    
+
     document.querySelectorAll('.view-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             currentViewMode = btn.dataset.view;
@@ -660,15 +660,15 @@ function initEventListeners() {
             renderDevices();
         });
     });
-    
+
     searchInput?.addEventListener('input', () => renderDevices());
-    
+
     document.getElementById('exportCsvBtn')?.addEventListener('click', exportToCsv);
     document.getElementById('rotateTokenBtn')?.addEventListener('click', rotateToken);
     document.getElementById('enableNotificationsBtn')?.addEventListener('click', requestNotificationPermission);
     document.getElementById('refreshBtn')?.addEventListener('click', () => {
         if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'get_devices' }));
+            ws.send(getDevicesRequestMessage().toString());
             showToast('Refreshing devices...', 'info');
         }
     });
@@ -690,13 +690,13 @@ function initEventListeners() {
             showToast('Token info copied to clipboard', 'success');
         }
     });
-    
+
     setInterval(() => {
         if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'get_extended_statuses' }));
+            ws.send(getExtendedStatusesRequestMessage().toString());
         }
     }, 30000);
-    
+
     document.getElementById('resetWidgetsBtn')?.addEventListener('click', () => {
         if (widgetManager) widgetManager.resetToDefault();
     });
@@ -709,7 +709,7 @@ function initEventListeners() {
             if (window.showToast) window.showToast('Widget system not ready', 'error');
         }
     });
-    
+
     initModalHandlers();
 }
 
@@ -717,11 +717,11 @@ function switchView(view) {
     currentView = view;
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.getElementById(`${view}View`)?.classList.add('active');
-    
+
     if (view === 'devices') renderDevices();
     if (view === 'history') renderHistory();
     if (view === 'logs') renderLogs();
-    
+
     if (view === 'admin') {
         loadSystemMetrics();
         loadBlacklist();
@@ -735,20 +735,20 @@ function switchView(view) {
 
 function connectWebSocket() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-    
+
     const address = settings.wsAddress;
     ws = new WebSocket(address);
-    
+
     ws.onopen = () => {
         settings.reconnectAttempts = 0;
         updateConnectionStatus(true);
         addLogEntry('system', 'Connected to Core');
         if (reconnectTimer) clearTimeout(reconnectTimer);
         requestTokenInfo();
-        ws.send(JSON.stringify({ type: 'get_devices' }));
+        ws.send(getDevicesRequestMessage().toString());
         updateServerStatus(true, 'Connected');
     };
-    
+
     ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
@@ -757,7 +757,7 @@ function connectWebSocket() {
             console.error('Failed to parse message', e);
         }
     };
-    
+
     ws.onclose = () => {
         updateConnectionStatus(false);
         addLogEntry('system', 'Disconnected from Core');
@@ -766,7 +766,7 @@ function connectWebSocket() {
             scheduleReconnect();
         }
     };
-    
+
     ws.onerror = (error) => {
         console.error('WebSocket error', error);
         addLogEntry('error', 'WebSocket connection error');
@@ -776,15 +776,15 @@ function connectWebSocket() {
 
 function scheduleReconnect() {
     if (!settings.autoReconnect || manualDisconnect) return;
-    
+
     if (reconnectTimer) clearTimeout(reconnectTimer);
-    
+
     settings.reconnectAttempts++;
     if (settings.maxReconnectAttempts > 0 && settings.reconnectAttempts > settings.maxReconnectAttempts) {
         addLogEntry('system', 'Max reconnect attempts reached');
         return;
     }
-    
+
     reconnectTimer = setTimeout(() => {
         addLogEntry('system', `Reconnecting... (Attempt ${settings.reconnectAttempts})`);
         connectWebSocket();
@@ -804,7 +804,7 @@ function handleMessage(data) {
                 renderDevices();
                 if (widgetManager) widgetManager.updateAll();
                 checkAndNotifyPending();
-                
+
                 Object.entries(devices).forEach(([id, device]) => {
                     const oldDevice = oldDevices[id];
                     if (oldDevice && oldDevice.status !== device.status) {
@@ -817,7 +817,7 @@ function handleMessage(data) {
                 });
             }
             break;
-            
+
         case 'confirm_command':
             pendingConfirmation = {
                 id: data.id,
@@ -831,7 +831,7 @@ function handleMessage(data) {
             }
             document.getElementById('confirmModal').style.display = 'block';
             break;
-            
+
         case 'device_auth_request':
             pendingAuthRequest = {
                 id: data.id,
@@ -845,22 +845,22 @@ function handleMessage(data) {
             if (authDeviceType) authDeviceType.textContent = data.payload.device_type;
             const capsContainer = document.getElementById('authCapabilitiesList');
             if (capsContainer) {
-                capsContainer.innerHTML = data.payload.capabilities.map(cap => 
+                capsContainer.innerHTML = data.payload.capabilities.map(cap =>
                     `<span class="capability-chip">${escapeHtml(cap)}</span>`
                 ).join('');
             }
             document.getElementById('authModal').style.display = 'block';
             break;
-            
+
         case 'token_info':
             updateTokenInfo(data.payload);
             break;
-            
+
         case 'command_result':
             handleCommandResult(data);
             if (widgetManager) widgetManager.updateAll();
             break;
-            
+
         case 'status':
             if (data.payload?.device_id && devices[data.payload.device_id]) {
                 devices[data.payload.device_id].status = data.payload.status;
@@ -900,7 +900,7 @@ function handleCommandResult(data) {
     const { id, device_id, payload } = data;
     const success = payload.success;
     const error = payload.error;
-    
+
     const historyEntry = commandHistory.find(h => h.id === id);
     if (historyEntry) {
         historyEntry.status = success ? 'success' : 'error';
@@ -908,7 +908,7 @@ function handleCommandResult(data) {
         saveStoredData();
         renderHistory();
     }
-    
+
     if (success) {
         showToast(`Command executed successfully on ${device_id}`, 'success');
         addLogEntry('command_result', `✅ Command succeeded on ${device_id}`);
@@ -931,7 +931,7 @@ function updateDashboardStats() {
     const online = Object.values(devices).filter(d => d.status === 'online').length;
     const pending = Object.values(devices).filter(d => d.status === 'pending').length;
     const offline = Object.values(devices).filter(d => d.status === 'offline').length;
-    
+
     const totalEl = document.getElementById('totalDevices');
     if (totalEl) totalEl.textContent = total;
     const onlineEl = document.getElementById('onlineDevices');
@@ -940,12 +940,12 @@ function updateDashboardStats() {
     if (pendingEl) pendingEl.textContent = pending;
     const offlineEl = document.getElementById('offlineDevices');
     if (offlineEl) offlineEl.textContent = offline;
-    
+
     const badge = document.getElementById('deviceCountBadge');
     if (badge) {
         let mainStatus = 'offline';
         let displayCount = offline;
-        
+
         if (online > 0) {
             mainStatus = 'online';
             displayCount = online;
@@ -956,12 +956,12 @@ function updateDashboardStats() {
             mainStatus = 'offline';
             displayCount = offline;
         }
-        
+
         badge.textContent = displayCount;
         badge.classList.remove('online', 'pending', 'offline');
         badge.classList.add(mainStatus);
     }
-    
+
     const recentContainer = document.getElementById('recentCommands');
     if (recentContainer) {
         if (commandHistory.length > 0) {
@@ -984,26 +984,26 @@ function updateDashboardStats() {
 
 function renderDevices() {
     if (!devicesContainer) return;
-    
+
     let filteredDevices = Object.entries(devices);
-    
+
     if (currentFilter !== 'all') {
         filteredDevices = filteredDevices.filter(([_, d]) => d.status === currentFilter);
     }
-    
+
     const searchTerm = searchInput?.value.toLowerCase() || '';
     if (searchTerm) {
-        filteredDevices = filteredDevices.filter(([id, d]) => 
-            id.toLowerCase().includes(searchTerm) || 
+        filteredDevices = filteredDevices.filter(([id, d]) =>
+            id.toLowerCase().includes(searchTerm) ||
             d.type.toLowerCase().includes(searchTerm)
         );
     }
-    
+
     if (filteredDevices.length === 0) {
         devicesContainer.innerHTML = '<div class="loading-placeholder">No devices found</div>';
         return;
     }
-    
+
     if (currentViewMode === 'grid') {
         devicesContainer.innerHTML = filteredDevices.map(([id, d]) => renderDeviceCard(id, d)).join('');
     } else {
@@ -1013,7 +1013,7 @@ function renderDevices() {
             </div>
         `;
     }
-    
+
     attachDeviceEventListeners();
 }
 
@@ -1036,7 +1036,7 @@ function renderDeviceCard(id, device) {
         if (metrics.battery !== undefined) metricsHtml += `<span class="metric-badge"><i class="fas fa-battery-${metrics.battery > 75 ? 'full' : (metrics.battery > 50 ? 'half' : 'quarter')}"></i> ${metrics.battery}%</span>`;
         metricsHtml += '</div></div>';
     }
-    
+
     return `
         <div class="device-card ${device.status}" data-device-id="${id}">
             <div class="card-header">
@@ -1054,7 +1054,7 @@ function renderDeviceCard(id, device) {
             <div class="device-type">${escapeHtml(device.type)}</div>
             ${metricsHtml}
             <div class="device-last-seen"><i class="fas fa-clock"></i> Last seen: ${lastSeen}</div>
-            
+
             <div class="card-actions">
                 <button class="btn-primary send-cmd" data-id="${id}" ${!isOnline ? 'disabled' : ''}>
                     <i class="fas fa-paper-plane"></i> Send Command
@@ -1071,19 +1071,19 @@ function renderDeviceCard(id, device) {
                     <i class="fas fa-trash"></i> Remove
                 </button>
             </div>
-            
+
             <div class="quick-commands-panel" id="quick-panel-${id}" style="display: none;">
                 <div class="quick-commands-header">
                     <span><i class="fas fa-bolt"></i> Quick Commands</span>
                     <button class="close-quick-panel" data-id="${id}">&times;</button>
                 </div>
                 <div class="quick-commands-grid">
-                    ${capabilities.length > 0 ? 
+                    ${capabilities.length > 0 ?
                         capabilities.map(cmd => `
                             <button class="quick-cmd-btn" data-id="${id}" data-cmd="${cmd}">
                                 <i class="fas fa-terminal"></i> ${escapeHtml(cmd)}
                             </button>
-                        `).join('') : 
+                        `).join('') :
                         '<div class="no-commands">No quick commands available</div>'
                     }
                 </div>
@@ -1101,7 +1101,7 @@ function renderDeviceCard(id, device) {
 function renderDeviceListItem(id, device) {
     const lastSeen = device.last_seen ? new Date(device.last_seen * 1000).toLocaleString() : 'Never';
     const isOnline = device.status === 'online';
-    
+
     return `
         <div class="device-list-item" data-device-id="${id}">
             <div>
@@ -1137,32 +1137,32 @@ function attachDeviceEventListeners() {
             e.stopPropagation();
             const deviceId = btn.dataset.id;
             const device = devices[deviceId];
-            
+
             if (!device || device.status !== 'online') {
                 showToast('Device is offline', 'warning');
                 return;
             }
-            
+
             document.querySelectorAll('.quick-commands-panel').forEach(panel => {
                 if (panel.id !== `quick-panel-${deviceId}`) {
                     panel.style.display = 'none';
                 }
             });
-            
+
             const panel = document.getElementById(`quick-panel-${deviceId}`);
             if (panel) {
                 panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
             }
         });
     });
-    
+
     document.querySelectorAll('.json-cmd').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             showCommandModal(btn.dataset.id);
         });
     });
-    
+
     document.querySelectorAll('.close-quick-panel').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1170,7 +1170,7 @@ function attachDeviceEventListeners() {
             if (panel) panel.style.display = 'none';
         });
     });
-    
+
     document.querySelectorAll('.quick-cmd-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1181,26 +1181,26 @@ function attachDeviceEventListeners() {
             sendCommand(deviceId, command, {});
         });
     });
-    
+
     document.querySelectorAll('.send-custom-cmd').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             const deviceId = btn.dataset.id;
             const input = document.getElementById(`custom-cmd-${deviceId}`);
             const command = input?.value.trim();
-            
+
             if (!command) {
                 showToast('Enter a command name', 'warning');
                 return;
             }
-            
+
             const panel = document.getElementById(`quick-panel-${deviceId}`);
             if (panel) panel.style.display = 'none';
             sendCommand(deviceId, command, {});
             if (input) input.value = '';
         });
     });
-    
+
     document.querySelectorAll('.custom-cmd-input').forEach(input => {
         input.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -1216,14 +1216,14 @@ function attachDeviceEventListeners() {
             }
         });
     });
-    
+
     document.querySelectorAll('.disconnect-device').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             disconnectDevice(btn.dataset.id);
         });
     });
-    
+
     document.querySelectorAll('.remove-device').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1232,7 +1232,7 @@ function attachDeviceEventListeners() {
             }
         });
     });
-    
+
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.quick-commands-panel') && !e.target.closest('.send-cmd')) {
             document.querySelectorAll('.quick-commands-panel').forEach(panel => {
@@ -1256,17 +1256,17 @@ function getDeviceIcon(deviceType) {
 
 function showCommandModal(deviceId) {
     const device = devices[deviceId];
-    
+
     if (!device) {
         showToast('Device not found', 'error');
         return;
     }
-    
+
     if (device.status !== 'online') {
         showToast(`Cannot send command to offline/pending device (status: ${device.status})`, 'warning');
         return;
     }
-    
+
     document.getElementById('modalDeviceId').value = deviceId;
     document.getElementById('modalCommand').value = '';
     document.getElementById('modalPayload').value = '{}';
@@ -1286,19 +1286,20 @@ function sendCommand(deviceId, command, payload, callback) {
         if (callback) callback(false);
         return;
     }
-    
-    const msgId = generateUUID();
-    ws.send(JSON.stringify({ type: 'command', device_id: deviceId, command, payload, id: msgId }));
-    
+
+    const msg = commandMessage(deviceId, command, payload);
+    ws.send(msg.toString());
+    const msgId = msg.id;
+
     commandHistory.unshift({
         id: msgId, timestamp: Date.now(), deviceId, command,
         payload: JSON.stringify(payload), status: 'pending', error: null
     });
-    
+
     while (commandHistory.length > settings.historyLimit) commandHistory.pop();
     saveStoredData();
     renderHistory();
-    
+
     addLogEntry('command', `→ ${deviceId}: ${command}`);
     showToast(`Command sent to ${deviceId}`, 'info');
     if (callback) callback(true);
@@ -1314,31 +1315,31 @@ function generateUUID() {
 
 function disconnectDevice(deviceId) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ type: 'disconnect_device', device_id: deviceId }));
+    ws.send(disconnectDeviceMessage(deviceId).toString());
     addLogEntry('action', `Disconnected device ${deviceId}`);
     showToast(`Disconnected ${deviceId}`, 'warning');
 }
 
 function removeDevice(deviceId) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ type: 'remove_device', device_id: deviceId }));
-    
+    ws.send(removeDeviceMessage(deviceId).toString());
+
     if (devices[deviceId]) {
         delete devices[deviceId];
         renderDevices();
         updateDashboardStats();
         if (widgetManager) widgetManager.updateAll();
     }
-    
+
     addLogEntry('action', `Removed device ${deviceId}`);
     showToast(`Removed ${deviceId}`, 'success');
 }
 
 function approveDevice(deviceId, approved) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    const msg = { type: 'device_auth_response', device_id: deviceId, approved };
+    const msg = deviceAuthResponseMessage(pendingAuthRequest?.id || generateUUID(), approved);
     if (pendingAuthRequest?.device_id === deviceId) msg.id = pendingAuthRequest.id;
-    ws.send(JSON.stringify(msg));
+    ws.send(msg.toString());
     addLogEntry('auth', `Device ${deviceId} ${approved ? 'approved' : 'denied'}`);
     showToast(`Device ${deviceId} ${approved ? 'approved' : 'denied'}`, approved ? 'success' : 'warning');
 }
@@ -1349,7 +1350,7 @@ function rotateToken() {
         return;
     }
     if (confirm('Generate a new authentication token? All online devices will receive the new token.')) {
-        ws.send(JSON.stringify({ type: 'rotate_token' }));
+        ws.send(rotateTokenRequestMessage().toString());
         addLogEntry('action', 'Token rotation requested');
         showToast('Token rotation requested', 'info');
     }
@@ -1359,19 +1360,19 @@ function rotateToken() {
 
 function requestTokenInfo() {
     if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'get_token_info' }));
+        ws.send(getTokenInfoRequestMessage().toString());
     }
 }
 
 function updateTokenInfo(payload) {
     const created = payload.created_at ? new Date(payload.created_at * 1000).toLocaleString() : 'N/A';
     const expiresIn = payload.expires_in ? formatTime(payload.expires_in) : 'Never';
-    
+
     const infoDiv = document.getElementById('tokenInfo');
     if (infoDiv) {
         infoDiv.innerHTML = `<strong>Created:</strong> ${created}<br><strong>Expires:</strong> ${expiresIn}`;
     }
-    
+
     // Обновляем token виджеты
     if (window.updateTokenWidgets) {
         window.updateTokenWidgets(created, expiresIn);
@@ -1390,12 +1391,12 @@ function formatTime(seconds) {
 
 function renderHistory() {
     if (!historyList) return;
-    
+
     if (commandHistory.length === 0) {
         historyList.innerHTML = '<div class="loading-placeholder">No command history</div>';
         return;
     }
-    
+
     historyList.innerHTML = commandHistory.map(entry => `
         <div class="history-item">
             <span class="history-time">${new Date(entry.timestamp).toLocaleString()}</span>
@@ -1410,12 +1411,12 @@ function renderHistory() {
 
 function renderLogs() {
     if (!logsContainer) return;
-    
+
     if (eventLogs.length === 0) {
         logsContainer.innerHTML = '<div class="loading-placeholder">No event logs</div>';
         return;
     }
-    
+
     logsContainer.innerHTML = eventLogs.map(log => `
         <div class="log-item">
             <span class="log-time">${log.time}</span>
@@ -1436,14 +1437,14 @@ function addLogEntry(category, message) {
 function showToast(message, type = 'info') {
     const container = document.getElementById('toastContainer');
     if (!container) return;
-    
+
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     toast.innerHTML = `
         <i class="fas ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'}"></i>
         <span>${escapeHtml(message)}</span>
     `;
-    
+
     container.appendChild(toast);
     setTimeout(() => {
         toast.style.animation = 'slideOutRight 0.3s ease';
@@ -1454,7 +1455,7 @@ function showToast(message, type = 'info') {
 function checkAndNotifyPending() {
     if (!settings.notifyPendingDevice) return;
     if (Notification.permission !== 'granted') return;
-    
+
     Object.entries(devices).forEach(([id, device]) => {
         if (device.status === 'pending' && !notifiedPendingIds.has(id)) {
             notifiedPendingIds.add(id);
@@ -1473,7 +1474,7 @@ function requestNotificationPermission() {
         showToast('Notifications not supported', 'error');
         return;
     }
-    
+
     if (Notification.permission === 'granted') {
         showToast('Notifications already enabled', 'success');
     } else if (Notification.permission !== 'denied') {
@@ -1520,12 +1521,12 @@ function exportToCsv() {
         d.last_seen ? new Date(d.last_seen * 1000).toLocaleString() : '',
         (d.capabilities || []).join(',')
     ]);
-    
+
     let csvContent = headers.join(',') + '\n';
     rows.forEach(row => {
         csvContent += row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',') + '\n';
     });
-    
+
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
@@ -1536,7 +1537,7 @@ function exportToCsv() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    
+
     showToast('Devices exported to CSV', 'success');
 }
 
@@ -1559,12 +1560,12 @@ async function loadGroups() {
 function renderGroupsList() {
     const container = document.getElementById('groupsList');
     if (!container) return;
-    
+
     if (Object.keys(groups).length === 0) {
         container.innerHTML = '<div class="loading-placeholder">No groups created</div>';
         return;
     }
-    
+
     container.innerHTML = Object.entries(groups).map(([id, group]) => `
         <div class="group-item" data-group-id="${id}">
             <div class="group-header" onclick="toggleGroup('${id}')">
@@ -1593,7 +1594,7 @@ function renderGroupsList() {
                 <div class="add-device-to-group">
                     <select class="add-device-select" data-group="${id}">
                         <option value="">-- Add device --</option>
-                        ${Object.keys(devices).filter(d => !group.devices.includes(d)).map(d => 
+                        ${Object.keys(devices).filter(d => !group.devices.includes(d)).map(d =>
                             `<option value="${d}">${escapeHtml(d)}</option>`
                         ).join('')}
                     </select>
@@ -1601,14 +1602,14 @@ function renderGroupsList() {
             </div>
         </div>
     `).join('');
-    
+
     document.querySelectorAll('.remove-from-group').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             removeDeviceFromGroup(btn.dataset.group, btn.dataset.device);
         });
     });
-    
+
     document.querySelectorAll('.add-device-select').forEach(select => {
         select.addEventListener('change', (e) => {
             const groupId = select.dataset.group;
@@ -1700,14 +1701,14 @@ function renderDeviceTags() {
     document.querySelectorAll('.device-card').forEach(card => {
         const deviceId = card.dataset.deviceId;
         const deviceTags = tags[deviceId] || [];
-        
+
         let tagsContainer = card.querySelector('.device-tags');
         if (!tagsContainer) {
             tagsContainer = document.createElement('div');
             tagsContainer.className = 'device-tags';
             card.querySelector('.device-type')?.after(tagsContainer);
         }
-        
+
         tagsContainer.innerHTML = `
             <div class="tags-container">
                 ${deviceTags.map(tag => `
@@ -1723,14 +1724,14 @@ function renderDeviceTags() {
             </div>
         `;
     });
-    
+
     document.querySelectorAll('.tag-remove').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             removeTag(btn.dataset.device, btn.dataset.tag);
         });
     });
-    
+
     document.querySelectorAll('.add-tag-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1743,7 +1744,7 @@ function renderDeviceTags() {
             }
         });
     });
-    
+
     document.querySelectorAll('.tag-input').forEach(input => {
         input.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -1762,7 +1763,7 @@ function renderDeviceTags() {
 async function addTag(deviceId, tag) {
     const currentTags = tags[deviceId] || [];
     if (currentTags.includes(tag)) return;
-    
+
     const newTags = [...currentTags, tag];
     try {
         await fetch('/api/tags', {
@@ -1811,14 +1812,14 @@ function toggleDeviceSelection(deviceId, event) {
 function updateMassSelectionUI() {
     const massBar = document.getElementById('massSelectBar');
     const selectedCount = document.getElementById('selectedCount');
-    
+
     if (selectedDevices.size > 0) {
         massBar.classList.add('active');
         selectedCount.textContent = selectedDevices.size;
     } else {
         massBar.classList.remove('active');
     }
-    
+
     document.querySelectorAll('.device-card').forEach(card => {
         const deviceId = card.dataset.deviceId;
         if (selectedDevices.has(deviceId)) {
@@ -1853,7 +1854,7 @@ async function executeMassCommand() {
         showToast('Enter a command', 'error');
         return;
     }
-    
+
     let successCount = 0, skippedCount = 0;
     for (const deviceId of selectedDevices) {
         const device = devices[deviceId];
@@ -1865,7 +1866,7 @@ async function executeMassCommand() {
             skippedCount++;
         }
     }
-    
+
     let message = `Command sent to ${successCount} devices`;
     if (skippedCount > 0) message += ` (${skippedCount} offline/pending skipped)`;
     showToast(message, successCount > 0 ? 'success' : 'warning');
@@ -1876,7 +1877,7 @@ async function executeMassCommand() {
 async function addSelectedToGroup() {
     if (selectedDevices.size === 0) return;
     const select = document.getElementById('groupSelect');
-    select.innerHTML = '<option value="">-- Select Group --</option>' + 
+    select.innerHTML = '<option value="">-- Select Group --</option>' +
         Object.entries(groups).map(([id, group]) => `<option value="${id}">${escapeHtml(group.name)}</option>`).join('');
     document.getElementById('groupDevicesList').textContent = `${selectedDevices.size} devices`;
     document.getElementById('addToGroupModal').style.display = 'block';
@@ -1914,7 +1915,7 @@ function initModalHandlers() {
     const commandModal = document.getElementById('commandModal');
     const confirmModal = document.getElementById('confirmModal');
     const authModal = document.getElementById('authModal');
-    
+
     document.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
         btn.addEventListener('click', () => {
             if (commandModal) commandModal.style.display = 'none';
@@ -1922,7 +1923,7 @@ function initModalHandlers() {
             if (authModal) authModal.style.display = 'none';
         });
     });
-    
+
     document.getElementById('sendCommandBtn')?.addEventListener('click', () => {
         const deviceId = document.getElementById('modalDeviceId').value;
         const command = document.getElementById('modalCommand').value.trim();
@@ -1940,35 +1941,31 @@ function initModalHandlers() {
         sendCommand(deviceId, command, payload);
         if (commandModal) commandModal.style.display = 'none';
     });
-    
+
     document.getElementById('confirmYesBtn')?.addEventListener('click', () => {
         if (pendingConfirmation && ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-                type: 'confirm_response', id: pendingConfirmation.id,
-                device_id: pendingConfirmation.device_id, command: pendingConfirmation.command,
-                params: pendingConfirmation.params, approved: true
-            }));
+            ws.send(confirmResponseMessage(pendingConfirmation.id, true).toString());
             showToast(`Command "${pendingConfirmation.command}" confirmed`, 'warning');
         }
         if (confirmModal) confirmModal.style.display = 'none';
         pendingConfirmation = null;
     });
-    
+
     document.getElementById('confirmNoBtn')?.addEventListener('click', () => {
         if (confirmModal) confirmModal.style.display = 'none';
         pendingConfirmation = null;
     });
-    
+
     document.getElementById('authApproveBtn')?.addEventListener('click', () => {
         if (pendingAuthRequest) approveDevice(pendingAuthRequest.device_id, true);
         if (authModal) authModal.style.display = 'none';
     });
-    
+
     document.getElementById('authDenyBtn')?.addEventListener('click', () => {
         if (pendingAuthRequest) approveDevice(pendingAuthRequest.device_id, false);
         if (authModal) authModal.style.display = 'none';
     });
-    
+
     window.onclick = (e) => {
         if (commandModal && e.target === commandModal) commandModal.style.display = 'none';
         if (confirmModal && e.target === confirmModal) confirmModal.style.display = 'none';
@@ -1980,7 +1977,7 @@ function initModalHandlers() {
 function initBroadcastModal() {
     const broadcastModal = document.getElementById('broadcastModal');
     if (!broadcastModal) return;
-    
+
     // Кнопки закрытия внутри модального окна
     const closeButtons = broadcastModal.querySelectorAll('.modal-close, .modal-cancel');
     closeButtons.forEach(btn => {
@@ -1990,14 +1987,14 @@ function initBroadcastModal() {
             broadcastModal.style.display = 'none';
         });
     });
-    
+
     // Клик по фону (overlay)
     broadcastModal.addEventListener('click', (e) => {
         if (e.target === broadcastModal) {
             broadcastModal.style.display = 'none';
         }
     });
-    
+
     // Кнопка отправки
     const sendBtn = document.getElementById('sendBroadcastBtn');
     if (sendBtn) {
@@ -2006,7 +2003,7 @@ function initBroadcastModal() {
         sendBtn.parentNode.replaceChild(newSendBtn, sendBtn);
         newSendBtn.addEventListener('click', sendBroadcastCommand);
     }
-    
+
     // Кнопка Broadcast в хедере
     const broadcastHeaderBtn = document.querySelector('.broadcast-btn');
     if (broadcastHeaderBtn) {
@@ -2034,7 +2031,7 @@ async function sendBroadcastCommand() {
         return;
     }
     if (confirm(`Send "${command}" to ALL online devices?`)) {
-        ws.send(JSON.stringify({ type: 'broadcast_command', command: command, payload: payload }));
+        ws.send(broadcastCommandMessage(command, payload).toString());
         showToast(`Broadcasting "${command}" to all devices...`, 'info');
         document.getElementById('broadcastModal').style.display = 'none';
         document.getElementById('broadcastCommand').value = '';
@@ -2046,7 +2043,7 @@ async function sendBroadcastCommand() {
 
 async function loadSystemMetrics() {
     if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'get_system_metrics' }));
+        ws.send(getSystemMetricsRequestMessage().toString());
     }
 }
 
@@ -2055,16 +2052,16 @@ function updateSystemMetrics(metrics) {
     const ram = Math.round(metrics.memory_percent);
     const disk = Math.round(metrics.disk_percent);
     const network = metrics.network_rx_mbps + metrics.network_tx_mbps;
-    
+
     document.getElementById('cpuValue').textContent = `${cpu}%`;
     document.getElementById('ramValue').textContent = `${ram}%`;
     document.getElementById('diskValue').textContent = `${disk}%`;
     document.getElementById('networkValue').textContent = `${network.toFixed(1)} Mbps`;
-    
+
     document.getElementById('cpuBar').style.width = `${cpu}%`;
     document.getElementById('ramBar').style.width = `${ram}%`;
     document.getElementById('diskBar').style.width = `${disk}%`;
-    
+
     const cpuBar = document.getElementById('cpuBar');
     if (cpu > 80) cpuBar.style.background = 'var(--danger)';
     else if (cpu > 60) cpuBar.style.background = 'var(--warning)';
@@ -2075,19 +2072,19 @@ function updateSystemMetrics(metrics) {
 
 async function loadBlacklist() {
     if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'get_blacklist' }));
+        ws.send(getBlacklistRequestMessage().toString());
     }
 }
 
 function updateBlacklist(devices) {
     const container = document.getElementById('blacklistContainer');
     if (!container) return;
-    
+
     if (devices.length === 0) {
         container.innerHTML = '<div class="loading-placeholder">No blacklisted devices</div>';
         return;
     }
-    
+
     container.innerHTML = devices.map(deviceId => `
         <div class="blacklist-item">
             <code>${escapeHtml(deviceId)}</code>
@@ -2096,10 +2093,10 @@ function updateBlacklist(devices) {
             </button>
         </div>
     `).join('');
-    
+
     document.querySelectorAll('.remove-from-blacklist').forEach(btn => {
         btn.addEventListener('click', () => {
-            ws.send(JSON.stringify({ type: 'blacklist_remove', device_id: btn.dataset.device }));
+            ws.send(blacklistRemoveMessage(btn.dataset.device).toString());
         });
     });
 }
@@ -2110,7 +2107,7 @@ async function addToBlacklist() {
         showToast('Enter device ID', 'warning');
         return;
     }
-    ws.send(JSON.stringify({ type: 'blacklist_add', device_id: deviceId }));
+    ws.send(blacklistAddMessage(deviceId).toString());
     document.getElementById('blacklistDeviceId').value = '';
     showToast(`Device ${deviceId} added to blacklist`, 'warning');
 }
@@ -2124,7 +2121,7 @@ let auditItemsPerPage = 25;
 async function loadAuditLog(resetPage = true) {
     if (resetPage) auditCurrentPage = 1;
     if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'get_audit_log', limit: 500 }));
+        ws.send(getAuditLogRequestMessage(500).toString());
     }
 }
 
@@ -2132,26 +2129,26 @@ function updateAuditLog(logs) {
     const container = document.getElementById('auditContainer');
     const filter = document.getElementById('auditEventFilter')?.value || 'all';
     const search = document.getElementById('auditSearch')?.value.toLowerCase() || '';
-    
+
     if (!container) return;
     auditLogData = logs;
-    
+
     let filteredLogs = logs;
     if (filter !== 'all') filteredLogs = filteredLogs.filter(log => log.event_type === filter);
-    if (search) filteredLogs = filteredLogs.filter(log => 
+    if (search) filteredLogs = filteredLogs.filter(log =>
         (log.device_id && log.device_id.toLowerCase().includes(search)) ||
         (log.details && log.details.toLowerCase().includes(search))
     );
-    
+
     if (filteredLogs.length === 0) {
         container.innerHTML = '<div class="loading-placeholder">No audit logs</div>';
         return;
     }
-    
+
     const totalPages = Math.ceil(filteredLogs.length / auditItemsPerPage);
     const start = (auditCurrentPage - 1) * auditItemsPerPage;
     const pageLogs = filteredLogs.slice(start, start + auditItemsPerPage);
-    
+
     let html = pageLogs.map(log => `
         <div class="audit-item">
             <span class="audit-time">${new Date(log.timestamp * 1000).toLocaleString()}</span>
@@ -2161,7 +2158,7 @@ function updateAuditLog(logs) {
             ${log.ip_address ? `<span class="audit-ip">${escapeHtml(log.ip_address)}</span>` : ''}
         </div>
     `).join('');
-    
+
     if (totalPages > 1) {
         html += `
             <div class="audit-pagination">
@@ -2194,27 +2191,27 @@ async function loadCommandStats(period = 'day') {
     if (period === 'day') cutoff = now - 24 * 3600 * 1000;
     else if (period === 'week') cutoff = now - 7 * 24 * 3600 * 1000;
     else cutoff = now - 30 * 24 * 3600 * 1000;
-    
+
     const filtered = commandHistory.filter(cmd => cmd.timestamp > cutoff);
     const total = filtered.length;
     const success = filtered.filter(cmd => cmd.status === 'success').length;
     const successRate = total > 0 ? Math.round(success / total * 100) : 0;
     const avgResponse = Math.round(Math.random() * 200 + 50);
-    
+
     document.getElementById('totalCommands').textContent = total;
     document.getElementById('successRate').textContent = `${successRate}%`;
     document.getElementById('avgResponse').textContent = `${avgResponse}ms`;
-    
+
     const grouped = {};
     filtered.forEach(cmd => {
         const date = new Date(cmd.timestamp);
         let key = period === 'day' ? `${date.getHours()}:00` : date.toLocaleDateString();
         grouped[key] = (grouped[key] || 0) + 1;
     });
-    
+
     const labels = Object.keys(grouped).slice(-24);
     const data = labels.map(l => grouped[l]);
-    
+
     if (commandsChart) commandsChart.destroy();
     const ctx = document.getElementById('commandsChart')?.getContext('2d');
     if (ctx) {
@@ -2234,7 +2231,7 @@ function initAdminListeners() {
     broadcastHeaderBtn.innerHTML = '<i class="fas fa-broadcast-tower"></i> Broadcast';
     broadcastHeaderBtn.addEventListener('click', () => document.getElementById('broadcastModal').style.display = 'block');
     document.querySelector('.header-actions')?.prepend(broadcastHeaderBtn);
-    
+
     document.getElementById('sendBroadcastBtn')?.addEventListener('click', sendBroadcastCommand);
     document.getElementById('refreshMetricsBtn')?.addEventListener('click', loadSystemMetrics);
     document.getElementById('refreshBlacklistBtn')?.addEventListener('click', loadBlacklist);
@@ -2242,7 +2239,7 @@ function initAdminListeners() {
     document.getElementById('addToBlacklistBtn')?.addEventListener('click', addToBlacklist);
     document.getElementById('auditEventFilter')?.addEventListener('change', () => { auditCurrentPage = 1; loadAuditLog(); });
     document.getElementById('auditSearch')?.addEventListener('input', () => { auditCurrentPage = 1; loadAuditLog(); });
-    
+
     document.querySelectorAll('.stats-period .period-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.stats-period .period-btn').forEach(b => b.classList.remove('active'));
@@ -2251,7 +2248,7 @@ function initAdminListeners() {
             loadCommandStats(currentStatPeriod);
         });
     });
-    
+
     const auditPerPage = document.getElementById('auditPerPage');
     if (auditPerPage) {
         auditPerPage.addEventListener('change', (e) => {
@@ -2335,8 +2332,9 @@ function sendDeviceToDevice(fromDeviceId, toDeviceId, command, payload, requireR
         showToast('Not connected to Core', 'error');
         return;
     }
-    const msgId = generateUUID();
-    ws.send(JSON.stringify({ type: 'device_to_device', from_device_id: fromDeviceId, to_device_id: toDeviceId, command: command, payload: payload, require_response: requireResponse, id: msgId }));
+    const msg = deviceToDeviceMessage(fromDeviceId, toDeviceId, command, payload, requireResponse);
+    ws.send(msg.toString());
+    const msgId = msg.id;
     addLogEntry('device_to_device', `${fromDeviceId} → ${toDeviceId}: ${command}`);
     showToast(`Command sent to ${toDeviceId}`, 'info');
     return msgId;
@@ -2411,7 +2409,7 @@ function showMetricsModal(deviceId) {
 function loadMetricsHistory(deviceId, hours) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     const activeMetrics = Array.from(document.querySelectorAll('.metric-toggle:checked')).map(cb => cb.dataset.metric);
-    ws.send(JSON.stringify({ type: 'get_device_metrics', device_id: deviceId, hours: hours, metrics: activeMetrics }));
+    ws.send(getDeviceMetricsRequestMessage(deviceId, hours, activeMetrics).toString());
     const handler = (data) => { if (data.type === 'device_metrics' && data.device_id === deviceId) { updateMetricsChart(deviceId, data.metrics); ws.removeEventListener('message', handler); } };
     ws.addEventListener('message', handler);
     setTimeout(() => ws.removeEventListener('message', handler), 5000);
@@ -2441,7 +2439,7 @@ function updateMetricsChart(deviceId, metricsData) {
 
 function requestDeviceMetrics(deviceId) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ type: 'request_device_metrics', device_id: deviceId, metric_types: null }));
+    ws.send(requestDeviceMetricsMessage(deviceId, null).toString());
     showToast(`Metrics requested from ${deviceId}`, 'info');
 }
 
