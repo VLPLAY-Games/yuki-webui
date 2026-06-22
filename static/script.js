@@ -1337,7 +1337,8 @@ function removeDevice(deviceId) {
 
 function approveDevice(deviceId, approved) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    const msg = deviceAuthResponseMessage(pendingAuthRequest?.id || generateUUID(), approved);
+    const msg = deviceAuthResponseMessage(pendingAuthRequest?.id || generateUUID(), approved, deviceId);
+    // id уже установлен внутри, но если нужно перезаписать:
     if (pendingAuthRequest?.device_id === deviceId) msg.id = pendingAuthRequest.id;
     ws.send(msg.toString());
     addLogEntry('auth', `Device ${deviceId} ${approved ? 'approved' : 'denied'}`);
