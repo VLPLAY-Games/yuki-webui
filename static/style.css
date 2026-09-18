@@ -883,6 +883,46 @@ input:checked + .slider:before {
     gap: 12px;
 }
 
+.auth-device-info {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.info-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.info-row .label {
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    min-width: 110px;
+}
+
+.capabilities-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.capability-chip {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 4px 10px;
+    border-radius: 30px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.auth-question {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
 .form-group {
     margin-bottom: 20px;
 }
