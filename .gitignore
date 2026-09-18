@@ -1,4 +1,6 @@
 __pycache__/
 logs/
 .credentials
+.flask_secret
 dashboard_data.json
+.venv

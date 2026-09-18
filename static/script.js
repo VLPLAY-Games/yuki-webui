@@ -117,6 +117,12 @@ function initSettingsListeners() {
         applyConnectionBtn.addEventListener('click', applyConnectionSettings);
     }
 
+    // Credentials update form
+    const credentialsForm = document.getElementById('credentialsForm');
+    if (credentialsForm) {
+        credentialsForm.addEventListener('submit', updateCredentials);
+    }
+
     // Test connection
     const testConnectionBtn = document.getElementById('testConnectionBtn');
     if (testConnectionBtn) {
@@ -329,6 +335,34 @@ function applyConnectionSettings() {
     }
 }
 
+async function updateCredentials(event) {
+    event.preventDefault();
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newUsername = document.getElementById('newUsername').value.trim();
+    const newPassword = document.getElementById('newPassword').value;
+
+    try {
+        const response = await fetch('/api/settings/credentials', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+            body: JSON.stringify({
+                current_password: currentPassword,
+                new_username: newUsername,
+                new_password: newPassword
+            })
+        });
+        const result = await response.json();
+        if (response.ok && result.success) {
+            showToast('Credentials updated. Use the new login next time.', 'success');
+            document.getElementById('credentialsForm').reset();
+        } else {
+            showToast(result.error || 'Failed to update credentials', 'error');
+        }
+    } catch (e) {
+        showToast('Failed to update credentials', 'error');
+    }
+}
+
 function testConnection() {
     const address = document.getElementById('wsAddress').value.trim();
     showToast(`Testing connection to ${address}...`, 'info');
@@ -390,7 +424,7 @@ function clearAllData() {
             try {
                 await fetch('/api/groups', {
                     method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
                     body: JSON.stringify({ group_id: groupId })
                 });
             } catch(e) {}
@@ -667,7 +701,7 @@ function initEventListeners() {
     document.getElementById('rotateTokenBtn')?.addEventListener('click', rotateToken);
     document.getElementById('enableNotificationsBtn')?.addEventListener('click', requestNotificationPermission);
     document.getElementById('refreshBtn')?.addEventListener('click', () => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
+        if (wsReady()) {
             ws.send(getDevicesRequestMessage().toString());
             showToast('Refreshing devices...', 'info');
         }
@@ -692,7 +726,7 @@ function initEventListeners() {
     });
 
     setInterval(() => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
+        if (wsReady()) {
             ws.send(getExtendedStatusesRequestMessage().toString());
         }
     }, 30000);
@@ -733,34 +767,80 @@ function switchView(view) {
 
 // ==================== WEBSOCKET ====================
 
-function connectWebSocket() {
+let wsAuthenticated = false;
+
+// True only once the socket is open AND the core auth handshake has completed - nothing should
+// send/expect data over the socket before this, since core.py closes the connection (1008) if
+// anything other than the auth message arrives first.
+function wsReady() {
+    return !!(ws && ws.readyState === WebSocket.OPEN && wsAuthenticated);
+}
+
+async function fetchCoreToken() {
+    const response = await fetch('/api/core-token', {
+        headers: { 'X-CSRF-Token': getCsrfToken() }
+    });
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `Failed to fetch core token (${response.status})`);
+    }
+    const data = await response.json();
+    return data.token;
+}
+
+async function connectWebSocket() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
+    let coreToken;
+    try {
+        coreToken = await fetchCoreToken();
+    } catch (e) {
+        console.error('Failed to fetch core auth token', e);
+        addLogEntry('error', `Cannot connect: ${e.message}`);
+        updateServerStatus(false, 'Error');
+        scheduleReconnect();
+        return;
+    }
+
+    wsAuthenticated = false;
     const address = settings.wsAddress;
     ws = new WebSocket(address);
 
     ws.onopen = () => {
-        settings.reconnectAttempts = 0;
-        updateConnectionStatus(true);
-        addLogEntry('system', 'Connected to Core');
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        requestTokenInfo();
-        ws.send(getDevicesRequestMessage().toString());
-        updateServerStatus(true, 'Connected');
+        // The auth message MUST be the very first thing sent on this socket.
+        ws.send(JSON.stringify({ type: 'auth', token: coreToken }));
     };
 
     ws.onmessage = (event) => {
+        let data;
         try {
-            const data = JSON.parse(event.data);
-            handleMessage(data);
+            data = JSON.parse(event.data);
         } catch (e) {
             console.error('Failed to parse message', e);
+            return;
         }
+
+        if (!wsAuthenticated) {
+            if (data.type === 'auth_ok') {
+                wsAuthenticated = true;
+                settings.reconnectAttempts = 0;
+                updateConnectionStatus(true);
+                addLogEntry('system', 'Connected to Core');
+                if (reconnectTimer) clearTimeout(reconnectTimer);
+                requestTokenInfo();
+                ws.send(getDevicesRequestMessage().toString());
+                updateServerStatus(true, 'Connected');
+            }
+            return; // ignore anything else until auth completes
+        }
+
+        handleMessage(data);
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+        wsAuthenticated = false;
         updateConnectionStatus(false);
-        addLogEntry('system', 'Disconnected from Core');
+        addLogEntry('system', event.code === 1008 ? 'Core rejected authentication' : 'Disconnected from Core');
         updateServerStatus(false, 'Disconnected');
         if (!manualDisconnect) {
             scheduleReconnect();
@@ -1038,7 +1118,7 @@ function renderDeviceCard(id, device) {
     }
 
     return `
-        <div class="device-card ${device.status}" data-device-id="${id}">
+        <div class="device-card ${device.status}" data-device-id="${escapeHtml(id)}">
             <div class="card-header">
                 <div class="device-icon">
                     <i class="fas ${getDeviceIcon(device.type)}"></i>
@@ -1046,7 +1126,7 @@ function renderDeviceCard(id, device) {
                 <div class="device-status-container">
                     <span class="status-badge ${device.status}">${device.status}</span>
                     ${substatus && substatus !== device.status ? `<span class="substatus-badge" style="background: ${getSubstatusColor(substatus)}20; color: ${getSubstatusColor(substatus)}">
-                        <i class="fas ${getSubstatusIcon(substatus)}"></i> ${substatus}
+                        <i class="fas ${getSubstatusIcon(substatus)}"></i> ${escapeHtml(substatus)}
                     </span>` : ''}
                 </div>
             </div>
@@ -1056,31 +1136,31 @@ function renderDeviceCard(id, device) {
             <div class="device-last-seen"><i class="fas fa-clock"></i> Last seen: ${lastSeen}</div>
 
             <div class="card-actions">
-                <button class="btn-primary send-cmd" data-id="${id}" ${!isOnline ? 'disabled' : ''}>
+                <button class="btn-primary send-cmd" data-id="${escapeHtml(id)}" ${!isOnline ? 'disabled' : ''}>
                     <i class="fas fa-paper-plane"></i> Send Command
                 </button>
-                <button class="btn-secondary json-cmd" data-id="${id}">
+                <button class="btn-secondary json-cmd" data-id="${escapeHtml(id)}">
                     <i class="fas fa-code"></i> JSON
                 </button>
                 ${isOnline ? `
-                    <button class="btn-secondary disconnect-device" data-id="${id}">
+                    <button class="btn-secondary disconnect-device" data-id="${escapeHtml(id)}">
                         <i class="fas fa-plug"></i> Disconnect
                     </button>
                 ` : ''}
-                <button class="btn-danger remove-device" data-id="${id}">
+                <button class="btn-danger remove-device" data-id="${escapeHtml(id)}">
                     <i class="fas fa-trash"></i> Remove
                 </button>
             </div>
 
-            <div class="quick-commands-panel" id="quick-panel-${id}" style="display: none;">
+            <div class="quick-commands-panel" id="quick-panel-${escapeHtml(id)}" style="display: none;">
                 <div class="quick-commands-header">
                     <span><i class="fas fa-bolt"></i> Quick Commands</span>
-                    <button class="close-quick-panel" data-id="${id}">&times;</button>
+                    <button class="close-quick-panel" data-id="${escapeHtml(id)}">&times;</button>
                 </div>
                 <div class="quick-commands-grid">
                     ${capabilities.length > 0 ?
                         capabilities.map(cmd => `
-                            <button class="quick-cmd-btn" data-id="${id}" data-cmd="${cmd}">
+                            <button class="quick-cmd-btn" data-id="${escapeHtml(id)}" data-cmd="${escapeHtml(cmd)}">
                                 <i class="fas fa-terminal"></i> ${escapeHtml(cmd)}
                             </button>
                         `).join('') :
@@ -1088,8 +1168,8 @@ function renderDeviceCard(id, device) {
                     }
                 </div>
                 <div class="custom-command-input">
-                    <input type="text" placeholder="Custom command..." id="custom-cmd-${id}" class="custom-cmd-input">
-                    <button class="send-custom-cmd" data-id="${id}">
+                    <input type="text" placeholder="Custom command..." id="custom-cmd-${escapeHtml(id)}" class="custom-cmd-input">
+                    <button class="send-custom-cmd" data-id="${escapeHtml(id)}">
                         <i class="fas fa-arrow-right"></i>
                     </button>
                 </div>
@@ -1103,7 +1183,7 @@ function renderDeviceListItem(id, device) {
     const isOnline = device.status === 'online';
 
     return `
-        <div class="device-list-item" data-device-id="${id}">
+        <div class="device-list-item" data-device-id="${escapeHtml(id)}">
             <div>
                 <strong>${escapeHtml(id)}</strong>
                 <br>
@@ -1112,18 +1192,18 @@ function renderDeviceListItem(id, device) {
             <div><span class="status-badge ${device.status}">${device.status}</span></div>
             <div style="font-size:0.75rem">${lastSeen}</div>
             <div>
-                <button class="btn-primary send-cmd small" data-id="${id}" ${!isOnline ? 'disabled' : ''}>
+                <button class="btn-primary send-cmd small" data-id="${escapeHtml(id)}" ${!isOnline ? 'disabled' : ''}>
                     <i class="fas fa-paper-plane"></i> Command
                 </button>
-                <button class="btn-secondary json-cmd small" data-id="${id}">
+                <button class="btn-secondary json-cmd small" data-id="${escapeHtml(id)}">
                     <i class="fas fa-code"></i> JSON
                 </button>
                 ${isOnline ? `
-                    <button class="btn-secondary disconnect-device small" data-id="${id}">
+                    <button class="btn-secondary disconnect-device small" data-id="${escapeHtml(id)}">
                         <i class="fas fa-plug"></i>
                     </button>
                 ` : ''}
-                <button class="btn-danger remove-device small" data-id="${id}">
+                <button class="btn-danger remove-device small" data-id="${escapeHtml(id)}">
                     <i class="fas fa-trash"></i>
                 </button>
             </div>
@@ -1281,7 +1361,7 @@ function sendCommand(deviceId, command, payload, callback) {
         return;
     }
 
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (!wsReady()) {
         showToast('Not connected to Core', 'error');
         if (callback) callback(false);
         return;
@@ -1314,14 +1394,14 @@ function generateUUID() {
 }
 
 function disconnectDevice(deviceId) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!wsReady()) return;
     ws.send(disconnectDeviceMessage(deviceId).toString());
     addLogEntry('action', `Disconnected device ${deviceId}`);
     showToast(`Disconnected ${deviceId}`, 'warning');
 }
 
 function removeDevice(deviceId) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!wsReady()) return;
     ws.send(removeDeviceMessage(deviceId).toString());
 
     if (devices[deviceId]) {
@@ -1336,7 +1416,7 @@ function removeDevice(deviceId) {
 }
 
 function approveDevice(deviceId, approved) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!wsReady()) return;
     const msg = deviceAuthResponseMessage(pendingAuthRequest?.id || generateUUID(), approved, deviceId);
     // id уже установлен внутри, но если нужно перезаписать:
     if (pendingAuthRequest?.device_id === deviceId) msg.id = pendingAuthRequest.id;
@@ -1346,7 +1426,7 @@ function approveDevice(deviceId, approved) {
 }
 
 function rotateToken() {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (!wsReady()) {
         showToast('Not connected', 'error');
         return;
     }
@@ -1360,7 +1440,7 @@ function rotateToken() {
 // ==================== TOKEN INFO ====================
 
 function requestTokenInfo() {
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (wsReady()) {
         ws.send(getTokenInfoRequestMessage().toString());
     }
 }
@@ -1505,12 +1585,17 @@ function loadStoredData() {
 
 function escapeHtml(str) {
     if (!str) return '';
-    return str.replace(/[&<>]/g, function(m) {
+    return String(str).replace(/[&<>"']/g, function(m) {
         if (m === '&') return '&amp;';
         if (m === '<') return '&lt;';
         if (m === '>') return '&gt;';
-        return m;
+        if (m === '"') return '&quot;';
+        return '&#39;';
     });
+}
+
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]')?.content || '';
 }
 
 // ==================== EXPORT ====================
@@ -1568,14 +1653,14 @@ function renderGroupsList() {
     }
 
     container.innerHTML = Object.entries(groups).map(([id, group]) => `
-        <div class="group-item" data-group-id="${id}">
-            <div class="group-header" onclick="toggleGroup('${id}')">
+        <div class="group-item" data-group-id="${escapeHtml(id)}">
+            <div class="group-header" data-toggle-group="${escapeHtml(id)}">
                 <span class="group-name">
                     <i class="fas fa-folder"></i>
                     ${escapeHtml(group.name)}
                     <span class="group-badge">${group.devices.length}</span>
                 </span>
-                <button class="delete-group" data-id="${id}" onclick="event.stopPropagation(); deleteGroup('${id}')">
+                <button class="delete-group" data-id="${escapeHtml(id)}">
                     <i class="fas fa-trash"></i>
                 </button>
             </div>
@@ -1586,23 +1671,34 @@ function renderGroupsList() {
                         <div class="group-device-item">
                             <span>${escapeHtml(deviceId)}</span>
                             <span class="status-badge ${device?.status || 'offline'}">${device?.status || 'unknown'}</span>
-                            <button class="remove-from-group" data-group="${id}" data-device="${deviceId}">
+                            <button class="remove-from-group" data-group="${escapeHtml(id)}" data-device="${escapeHtml(deviceId)}">
                                 <i class="fas fa-times"></i>
                             </button>
                         </div>
                     `;
                 }).join('')}
                 <div class="add-device-to-group">
-                    <select class="add-device-select" data-group="${id}">
+                    <select class="add-device-select" data-group="${escapeHtml(id)}">
                         <option value="">-- Add device --</option>
                         ${Object.keys(devices).filter(d => !group.devices.includes(d)).map(d =>
-                            `<option value="${d}">${escapeHtml(d)}</option>`
+                            `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`
                         ).join('')}
                     </select>
                 </div>
             </div>
         </div>
     `).join('');
+
+    document.querySelectorAll('.group-header').forEach(header => {
+        header.addEventListener('click', () => toggleGroup(header.dataset.toggleGroup));
+    });
+
+    document.querySelectorAll('.delete-group').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteGroup(btn.dataset.id);
+        });
+    });
 
     document.querySelectorAll('.remove-from-group').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -1624,14 +1720,14 @@ function renderGroupsList() {
 }
 
 function toggleGroup(groupId) {
-    const groupEl = document.querySelector(`.group-item[data-group-id="${groupId}"]`);
+    const groupEl = document.querySelector(`.group-item[data-group-id="${CSS.escape(groupId)}"]`);
     if (groupEl) groupEl.classList.toggle('expanded');
 }
 
 async function createGroup(name) {
     try {
         const response = await fetch('/api/groups', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             body: JSON.stringify({ name })
         });
         if (response.ok) {
@@ -1647,7 +1743,7 @@ async function deleteGroup(groupId) {
     if (!confirm('Delete this group? Devices will not be affected.')) return;
     try {
         await fetch('/api/groups', {
-            method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+            method: 'DELETE', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             body: JSON.stringify({ group_id: groupId })
         });
         await loadGroups();
@@ -1660,7 +1756,7 @@ async function deleteGroup(groupId) {
 async function addDeviceToGroup(groupId, deviceId) {
     try {
         await fetch(`/api/groups/${groupId}/devices`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             body: JSON.stringify({ device_id: deviceId })
         });
         await loadGroups();
@@ -1673,7 +1769,7 @@ async function addDeviceToGroup(groupId, deviceId) {
 async function removeDeviceFromGroup(groupId, deviceId) {
     try {
         await fetch(`/api/groups/${groupId}/devices`, {
-            method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+            method: 'DELETE', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             body: JSON.stringify({ device_id: deviceId })
         });
         await loadGroups();
@@ -1715,12 +1811,12 @@ function renderDeviceTags() {
                 ${deviceTags.map(tag => `
                     <span class="tag">
                         ${escapeHtml(tag)}
-                        <button class="tag-remove" data-device="${deviceId}" data-tag="${tag}">&times;</button>
+                        <button class="tag-remove" data-device="${escapeHtml(deviceId)}" data-tag="${escapeHtml(tag)}">&times;</button>
                     </span>
                 `).join('')}
                 <div class="add-tag-input">
-                    <input type="text" placeholder="Add tag..." class="tag-input" data-device="${deviceId}">
-                    <button class="add-tag-btn" data-device="${deviceId}">+</button>
+                    <input type="text" placeholder="Add tag..." class="tag-input" data-device="${escapeHtml(deviceId)}">
+                    <button class="add-tag-btn" data-device="${escapeHtml(deviceId)}">+</button>
                 </div>
             </div>
         `;
@@ -1768,7 +1864,7 @@ async function addTag(deviceId, tag) {
     const newTags = [...currentTags, tag];
     try {
         await fetch('/api/tags', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             body: JSON.stringify({ device_id: deviceId, tags: newTags })
         });
         tags[deviceId] = newTags;
@@ -1784,7 +1880,7 @@ async function removeTag(deviceId, tag) {
     const newTags = currentTags.filter(t => t !== tag);
     try {
         await fetch('/api/tags', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             body: JSON.stringify({ device_id: deviceId, tags: newTags })
         });
         tags[deviceId] = newTags;
@@ -1879,7 +1975,7 @@ async function addSelectedToGroup() {
     if (selectedDevices.size === 0) return;
     const select = document.getElementById('groupSelect');
     select.innerHTML = '<option value="">-- Select Group --</option>' +
-        Object.entries(groups).map(([id, group]) => `<option value="${id}">${escapeHtml(group.name)}</option>`).join('');
+        Object.entries(groups).map(([id, group]) => `<option value="${escapeHtml(id)}">${escapeHtml(group.name)}</option>`).join('');
     document.getElementById('groupDevicesList').textContent = `${selectedDevices.size} devices`;
     document.getElementById('addToGroupModal').style.display = 'block';
 }
@@ -1944,7 +2040,7 @@ function initModalHandlers() {
     });
 
     document.getElementById('confirmYesBtn')?.addEventListener('click', () => {
-        if (pendingConfirmation && ws && ws.readyState === WebSocket.OPEN) {
+        if (pendingConfirmation && wsReady()) {
             ws.send(confirmResponseMessage(pendingConfirmation.id, true).toString());
             showToast(`Command "${pendingConfirmation.command}" confirmed`, 'warning');
         }
@@ -2043,7 +2139,7 @@ async function sendBroadcastCommand() {
 // ==================== SYSTEM METRICS ====================
 
 async function loadSystemMetrics() {
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (wsReady()) {
         ws.send(getSystemMetricsRequestMessage().toString());
     }
 }
@@ -2072,7 +2168,7 @@ function updateSystemMetrics(metrics) {
 // ==================== BLACKLIST ====================
 
 async function loadBlacklist() {
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (wsReady()) {
         ws.send(getBlacklistRequestMessage().toString());
     }
 }
@@ -2089,7 +2185,7 @@ function updateBlacklist(devices) {
     container.innerHTML = devices.map(deviceId => `
         <div class="blacklist-item">
             <code>${escapeHtml(deviceId)}</code>
-            <button class="remove-from-blacklist btn-danger small" data-device="${deviceId}">
+            <button class="remove-from-blacklist btn-danger small" data-device="${escapeHtml(deviceId)}">
                 <i class="fas fa-trash"></i> Remove
             </button>
         </div>
@@ -2121,7 +2217,7 @@ let auditItemsPerPage = 25;
 
 async function loadAuditLog(resetPage = true) {
     if (resetPage) auditCurrentPage = 1;
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (wsReady()) {
         ws.send(getAuditLogRequestMessage(500).toString());
     }
 }
@@ -2265,7 +2361,7 @@ function initAdminListeners() {
 function updateExtendedStatus(deviceId, substatus, details) {
     if (!extendedStatuses[deviceId]) extendedStatuses[deviceId] = {};
     extendedStatuses[deviceId] = { substatus: substatus, details: details, lastUpdate: Date.now() };
-    const card = document.querySelector(`.device-card[data-device-id="${deviceId}"]`);
+    const card = document.querySelector(`.device-card[data-device-id="${CSS.escape(deviceId)}"]`);
     if (card) updateDeviceStatusDisplay(card, deviceId);
 }
 
@@ -2282,10 +2378,10 @@ function getSubstatusColor(substatus) {
 function updateDeviceStatusDisplay(card, deviceId) {
     const device = devices[deviceId];
     const extended = extendedStatuses[deviceId];
-    let statusHtml = `<span class="status-badge ${device?.status || 'offline'}">${device?.status || 'offline'}</span>`;
+    let statusHtml = `<span class="status-badge ${escapeHtml(device?.status || 'offline')}">${escapeHtml(device?.status || 'offline')}</span>`;
     if (extended && extended.substatus) {
         statusHtml += `<span class="substatus-badge" style="background: ${getSubstatusColor(extended.substatus)}20; color: ${getSubstatusColor(extended.substatus)}">
-            <i class="fas ${getSubstatusIcon(extended.substatus)}"></i> ${extended.substatus}
+            <i class="fas ${getSubstatusIcon(extended.substatus)}"></i> ${escapeHtml(extended.substatus)}
         </span>`;
     }
     const header = card.querySelector('.card-header');
@@ -2306,7 +2402,7 @@ function updateDeviceMetrics(deviceId, metrics, timestamp) {
     if (devices[deviceId]) {
         devices[deviceId].last_metrics = metrics;
         devices[deviceId].last_metrics_time = timestamp;
-        const card = document.querySelector(`.device-card[data-device-id="${deviceId}"]`);
+        const card = document.querySelector(`.device-card[data-device-id="${CSS.escape(deviceId)}"]`);
         if (card) {
             let metricsDiv = card.querySelector('.device-metrics');
             if (!metricsDiv) {
@@ -2329,7 +2425,7 @@ function updateDeviceMetrics(deviceId, metrics, timestamp) {
 // ==================== DEVICE TO DEVICE ====================
 
 function sendDeviceToDevice(fromDeviceId, toDeviceId, command, payload, requireResponse = false) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (!wsReady()) {
         showToast('Not connected to Core', 'error');
         return;
     }
@@ -2349,8 +2445,8 @@ function showDeviceToDeviceModal(deviceId) {
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header"><h3><i class="fas fa-exchange-alt"></i> Send to Device</h3><button class="modal-close">&times;</button></div>
             <div class="modal-body">
-                <div class="form-group"><label>From Device</label><input type="text" id="d2dFromDevice" readonly value="${deviceId}"></div>
-                <div class="form-group"><label>Target Device</label><select id="d2dTargetDevice" class="form-control">${Object.entries(devices).filter(([id, d]) => id !== deviceId && d.status === 'online').map(([id, d]) => `<option value="${id}">${id} (${d.type})</option>`).join('')}</select></div>
+                <div class="form-group"><label>From Device</label><input type="text" id="d2dFromDevice" readonly value="${escapeHtml(deviceId)}"></div>
+                <div class="form-group"><label>Target Device</label><select id="d2dTargetDevice" class="form-control">${Object.entries(devices).filter(([id, d]) => id !== deviceId && d.status === 'online').map(([id, d]) => `<option value="${escapeHtml(id)}">${escapeHtml(id)} (${escapeHtml(d.type)})</option>`).join('')}</select></div>
                 <div class="form-group"><label>Command</label><input type="text" id="d2dCommand" placeholder="e.g., get_status, reboot"></div>
                 <div class="form-group"><label>Payload (JSON)</label><textarea id="d2dPayload" rows="3" placeholder="{}"></textarea></div>
                 <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="d2dRequireResponse"><span>Require response</span></label></div>
@@ -2382,7 +2478,7 @@ function showMetricsModal(deviceId) {
     modal.dataset.deviceId = deviceId;
     modal.innerHTML = `
         <div class="modal-content" style="max-width: 800px;">
-            <div class="modal-header"><h3><i class="fas fa-chart-line"></i> Metrics: ${deviceId}</h3><button class="modal-close">&times;</button></div>
+            <div class="modal-header"><h3><i class="fas fa-chart-line"></i> Metrics: ${escapeHtml(deviceId)}</h3><button class="modal-close">&times;</button></div>
             <div class="modal-body">
                 <div class="metrics-period-selector"><button class="period-btn active" data-hours="1">Last Hour</button><button class="period-btn" data-hours="6">6 Hours</button><button class="period-btn" data-hours="24">24 Hours</button></div>
                 <div class="metrics-selector">
@@ -2408,7 +2504,7 @@ function showMetricsModal(deviceId) {
 }
 
 function loadMetricsHistory(deviceId, hours) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!wsReady()) return;
     const activeMetrics = Array.from(document.querySelectorAll('.metric-toggle:checked')).map(cb => cb.dataset.metric);
     ws.send(getDeviceMetricsRequestMessage(deviceId, hours, activeMetrics).toString());
     const handler = (data) => { if (data.type === 'device_metrics' && data.device_id === deviceId) { updateMetricsChart(deviceId, data.metrics); ws.removeEventListener('message', handler); } };
@@ -2439,7 +2535,7 @@ function updateMetricsChart(deviceId, metricsData) {
 }
 
 function requestDeviceMetrics(deviceId) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!wsReady()) return;
     ws.send(requestDeviceMetricsMessage(deviceId, null).toString());
     showToast(`Metrics requested from ${deviceId}`, 'info');
 }

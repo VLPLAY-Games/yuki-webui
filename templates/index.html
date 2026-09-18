@@ -3,16 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <title>Yuki System Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha384-iw3OoTErCYJJB9mCa8LNS2hbsQ7M3C0EpIsO/H5+EGAkPGc6rk+V8i04oW/K5xq0" crossorigin="anonymous">
     <link rel="shortcut icon" href="{{ url_for('static', filename='icons/favicon.ico') }}">
     <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='icons/favicon-16x16.png') }}">
     <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32x32.png') }}">
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
     <link rel="manifest" href="{{ url_for('static', filename='icons/site.webmanifest') }}">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
 </head>
 <body>
     <div class="app-container">
@@ -544,6 +545,36 @@
                     </div>
                 </div>
                 
+                <!-- Security -->
+                <div class="settings-card">
+                    <div class="settings-card-header">
+                        <i class="fas fa-user-shield"></i>
+                        <h3>Security</h3>
+                    </div>
+                    <div class="settings-card-body">
+                        <form id="credentialsForm" autocomplete="off">
+                            <div class="setting-group">
+                                <label>Current Password</label>
+                                <input type="password" id="currentPassword" autocomplete="current-password" required>
+                            </div>
+                            <div class="setting-group">
+                                <label>New Username</label>
+                                <input type="text" id="newUsername" autocomplete="username" required>
+                            </div>
+                            <div class="setting-group">
+                                <label>New Password</label>
+                                <input type="password" id="newPassword" autocomplete="new-password" required minlength="4">
+                            </div>
+                            <div class="setting-buttons">
+                                <button type="submit" class="btn-primary">
+                                    <i class="fas fa-key"></i> Update Credentials
+                                </button>
+                            </div>
+                            <div class="setting-hint">Changes the WebUI login username and password. Takes effect immediately.</div>
+                        </form>
+                    </div>
+                </div>
+
                 <!-- About -->
                 <div class="settings-card">
                     <div class="settings-card-header">
