@@ -62,6 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadTags();
     initAdminListeners();
     initAboutInfo();
+    updateEncryptionStatus();
 
     setInterval(updateDashboardStats, 1000);
     setInterval(updateServerInfo, 5000);
@@ -96,6 +97,23 @@ function initAboutInfo() {
 
     const githubLink = document.getElementById('githubLink');
     if (githubLink) githubLink.href = 'https://github.com/VLPLAY-Games/yuki-webui';
+}
+
+function updateEncryptionStatus() {
+    const webuiBadge = document.getElementById('webuiTlsStatus');
+    if (webuiBadge) {
+        const webuiTls = window.location.protocol === 'https:';
+        webuiBadge.textContent = webuiTls ? 'Enabled (HTTPS)' : 'Disabled (HTTP)';
+        webuiBadge.className = 'status-badge ' + (webuiTls ? 'online' : 'offline');
+    }
+
+    const coreBadge = document.getElementById('coreTlsStatus');
+    if (coreBadge) {
+        const address = (settings && settings.wsAddress) || (document.getElementById('wsAddress') || {}).value || '';
+        const coreTls = address.trim().toLowerCase().startsWith('wss://');
+        coreBadge.textContent = coreTls ? 'Enabled (WSS)' : 'Disabled (WS)';
+        coreBadge.className = 'status-badge ' + (coreTls ? 'online' : 'offline');
+    }
 }
 
 function detectBrowserName() {
@@ -364,6 +382,7 @@ function applyConnectionSettings() {
         }
         showToast(`Reconnecting to ${newAddress}...`, 'info');
     }
+    updateEncryptionStatus();
 }
 
 async function updateCredentials(event) {

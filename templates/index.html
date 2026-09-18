@@ -407,6 +407,35 @@
                     </div>
                 </div>
                 
+                <!-- Encryption Status -->
+                <div class="settings-card">
+                    <div class="settings-card-header">
+                        <i class="fas fa-lock"></i>
+                        <h3>Encryption</h3>
+                    </div>
+                    <div class="settings-card-body">
+                        <div class="server-status">
+                            <div class="status-row">
+                                <span>This WebUI page:</span>
+                                <span id="webuiTlsStatus" class="status-badge offline">Unknown</span>
+                            </div>
+                            <div class="status-row">
+                                <span>Core connection:</span>
+                                <span id="coreTlsStatus" class="status-badge offline">Unknown</span>
+                            </div>
+                        </div>
+                        <div class="setting-hint">
+                            Off by default so it works on a plain LAN with no certificates. To turn
+                            encryption on, set <code>YUKI_WEBUI_TLS_ENABLED=1</code> (plus
+                            <code>YUKI_WEBUI_TLS_CERT</code>/<code>YUKI_WEBUI_TLS_KEY</code>) for this
+                            page and <code>YUKI_TLS_ENABLED=1</code> (plus <code>YUKI_TLS_CERT</code>/
+                            <code>YUKI_TLS_KEY</code>) for yuki-core, then use a <code>wss://</code>
+                            address above. This can't be toggled live from here - both processes need
+                            a restart to pick it up.
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Auto Reconnect Settings -->
                 <div class="settings-card">
                     <div class="settings-card-header">

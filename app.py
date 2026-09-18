@@ -476,9 +476,15 @@ if __name__ == "__main__":
 
     ssl_context = None
     if TLS_ENABLED:
-        if TLS_CERT and TLS_KEY:
-            ssl_context = (TLS_CERT, TLS_KEY)
-        else:
-            print("YUKI_WEBUI_TLS_ENABLED is set but YUKI_WEBUI_TLS_CERT/YUKI_WEBUI_TLS_KEY are missing - starting without TLS")
+        if not TLS_CERT or not TLS_KEY:
+            # No silent fallback: an admin who set YUKI_WEBUI_TLS_ENABLED=1 believes the login
+            # page and session cookie are encrypted - serving plain HTTP anyway would betray
+            # that without them noticing.
+            raise RuntimeError(
+                "YUKI_WEBUI_TLS_ENABLED=1 but YUKI_WEBUI_TLS_CERT/YUKI_WEBUI_TLS_KEY are not set "
+                "(or point to missing files) - refusing to start in plaintext when TLS was "
+                "explicitly requested"
+            )
+        ssl_context = (TLS_CERT, TLS_KEY)
 
     app.run(host=host, port=5000, debug=debug_mode, ssl_context=ssl_context)
