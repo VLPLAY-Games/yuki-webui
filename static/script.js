@@ -61,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadGroups();
     loadTags();
     initAdminListeners();
+    initAboutInfo();
 
     setInterval(updateDashboardStats, 1000);
     setInterval(updateServerInfo, 5000);
@@ -76,6 +77,36 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 100);
 });
+
+function initAboutInfo() {
+    const browserInfo = document.getElementById('browserInfo');
+    if (browserInfo) browserInfo.textContent = detectBrowserName();
+
+    const languageInfo = document.getElementById('languageInfo');
+    if (languageInfo) languageInfo.textContent = navigator.language || 'unknown';
+
+    const timezoneInfo = document.getElementById('timezoneInfo');
+    if (timezoneInfo) {
+        try {
+            timezoneInfo.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        } catch (e) {
+            timezoneInfo.textContent = 'unknown';
+        }
+    }
+
+    const githubLink = document.getElementById('githubLink');
+    if (githubLink) githubLink.href = 'https://github.com/VLPLAY-Games/yuki-webui';
+}
+
+function detectBrowserName() {
+    const ua = navigator.userAgent;
+    if (ua.includes('Edg/')) return 'Edge';
+    if (ua.includes('OPR/') || ua.includes('Opera')) return 'Opera';
+    if (ua.includes('Firefox/')) return 'Firefox';
+    if (ua.includes('Chrome/')) return 'Chrome';
+    if (ua.includes('Safari/')) return 'Safari';
+    return 'Unknown';
+}
 
 // Добавьте эту функцию в script.js после функции loadSettings()
 
@@ -254,7 +285,7 @@ function resetSettings() {
 function exportSettings() {
     const settingsData = {
         settings: settings,
-        version: '2.0.0',
+        version: '1.0.0',
         exportDate: new Date().toISOString()
     };
 
