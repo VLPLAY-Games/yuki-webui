@@ -32,12 +32,20 @@ logged in. You can also bypass the file-based credentials entirely by setting `W
 | `WEBUI_USER` / `WEBUI_PASS` | unset | Override the `.credentials` file entirely. |
 | `YUKI_WEBUI_DEBUG` | unset | Enables Flask's debug mode (interactive debugger - only for local development, never expose this). |
 | `YUKI_WEBUI_HOST` | `127.0.0.1` | Bind address. Set to `0.0.0.0` to reach it from other devices on your LAN. |
-| `YUKI_WEBUI_TLS_ENABLED` | unset | When truthy, serves HTTPS instead of HTTP - requires the two variables below. |
+| `YUKI_WEBUI_TLS_ENABLED` | unset | When truthy, serves HTTPS instead of HTTP - requires the two variables below. If set without both of those, the app refuses to start (`RuntimeError`) rather than silently serving plain HTTP. |
 | `YUKI_WEBUI_TLS_CERT` / `YUKI_WEBUI_TLS_KEY` | unset | PEM certificate/key paths used when TLS is enabled. |
 | `YUKI_CORE_TOKEN_FILE` | `../yuki-core/.token` (relative to this repo) | Where to read `yuki-core`'s auth token from, to authenticate the dashboard's own `/webui` WebSocket connection. Override this if `yuki-core` isn't checked out next to this repo. |
 
 Encryption is **off by default**, matching the rest of the ecosystem; `SESSION_COOKIE_SECURE`
-automatically follows `YUKI_WEBUI_TLS_ENABLED`.
+automatically follows `YUKI_WEBUI_TLS_ENABLED`. The dashboard's Settings page has an **Encryption**
+card showing whether the page itself (HTTP/HTTPS) and its connection to `yuki-core` (`ws`/`wss`) are
+currently encrypted - it's read-only (flipping either one for real needs both processes restarted
+with the env vars above), but it's the one place that tells you the true state instead of leaving
+you to assume TLS is on just because you meant to turn it on.
+
+`yuki-core` also checks the `Origin` header on the `/webui` socket (see its own README,
+`YUKI_WEBUI_ALLOWED_ORIGINS`) - if you bind this app to a non-default host/port, update that
+variable on the `yuki-core` side or the dashboard's socket connection will be rejected.
 
 ## How it connects to `yuki-core`
 
@@ -54,6 +62,12 @@ message on the socket. `yuki-core` verifies it before accepting anything else.
 
 ## Protocol
 
-Speaks Yuki Protocol `yuki/1.0` via the vendored copy in `static/libs/yuki-protocol/` (Python for
-the backend's own message helpers, JavaScript for the browser) - see
+Speaks Yuki Protocol `yuki/1.0` via the `static/libs/yuki-protocol` git submodule
+([VLPLAY-Games/yuki-protocol](https://github.com/VLPLAY-Games/yuki-protocol), Python for the
+backend's own message helpers, JavaScript for the browser) - see
 [`yuki-protocol`](../yuki-protocol).
+
+## License
+
+GNU General Public License v3.0 (GPLv3), same as the rest of the Yuki ecosystem - see
+[yuki-system](https://github.com/VLPLAY-Games/yuki-system) for details.
